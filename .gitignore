@@ -1,4 +1,5 @@
 .venv/
+venv/
 env/
 .env
 __pycache__/
@@ -8,6 +9,8 @@ __pycache__/
 alembic/
 dist/
 build/
+uploads/
+*.db
 .DS_Store
 Thumbs.db
 *.log

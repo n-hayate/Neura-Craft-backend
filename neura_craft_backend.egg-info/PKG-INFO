@@ -1,3 +1,28 @@
+Metadata-Version: 2.4
+Name: neura-craft-backend
+Version: 0.1.0
+Summary: FastAPI backend for Neura Craft
+Author: Neura Craft Backend Team
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.111.0
+Requires-Dist: uvicorn[standard]>=0.30.0
+Requires-Dist: sqlalchemy[asyncio]>=2.0.30
+Requires-Dist: pyodbc>=5.1.0
+Requires-Dist: alembic>=1.13.2
+Requires-Dist: pydantic>=2.7.0
+Requires-Dist: pydantic-settings>=2.3.0
+Requires-Dist: python-dotenv>=1.0.1
+Requires-Dist: python-jose[cryptography]>=3.3.0
+Requires-Dist: passlib[bcrypt]>=1.7.4
+Requires-Dist: azure-identity>=1.17.1
+Requires-Dist: azure-storage-blob>=12.19.0
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: aiofiles>=23.2.1
+Provides-Extra: test
+Requires-Dist: pytest>=8.3.0; extra == "test"
+Requires-Dist: pytest-asyncio>=0.23.0; extra == "test"
+
 # Neura Craft Backend
 
 FastAPI ベースのバックエンドで、Next.js フロントエンドから REST API 経由で利用されます。Azure SQL Database と Azure Blob Storage を前提に設計されており、クリーンアーキテクチャ寄りの分離を採用しています。
@@ -30,31 +55,14 @@ FastAPI ベースのバックエンドで、Next.js フロントエンドから 
 
 ## 環境変数
 
-| 変数                              | 説明                                      |
-| --------------------------------- | ----------------------------------------- |
-| `APP_ENV`                         | `development` / `production` などの環境名 |
-| `SECRET_KEY`                      | JWT 署名キー                              |
-| `ACCESS_TOKEN_EXPIRE_MINUTES`     | アクセストークン有効期限                  |
-| `SQLALCHEMY_DATABASE_URI`         | DB 接続文字列（開発では SQLite でも可）   |
-| `AZURE_STORAGE_ACCOUNT_NAME`      | ストレージアカウント名                    |
-| `AZURE_STORAGE_CONNECTION_STRING` | Blob 接続文字列                           |
-| `AZURE_BLOB_FILES_CONTAINER`      | ファイル格納コンテナ                      |
-| `LOCAL_STORAGE_PATH`              | 開発時にファイルを保存するローカルパス    |
-
-### ストレージ設定（ローカル / Azure）
-
-- **開発環境（ローカル）**
-
-  - `.env` で `APP_ENV=development` を指定
-  - `AZURE_STORAGE_CONNECTION_STRING` はダミーでもよい
-  - アップロードされたファイルは `LOCAL_STORAGE_PATH`（デフォルト: `uploads/`）配下に保存される  
-    例: `uploads/<UUID>-<元ファイル名>`
-
-- **Azure Blob Storage を利用する場合**
-  - `.env` で `APP_ENV=production` など、`development` 以外の値を設定
-  - `AZURE_STORAGE_CONNECTION_STRING` に実際の接続文字列を設定
-  - `AZURE_BLOB_FILES_CONTAINER` に利用するコンテナ名を設定（例: `files`）
-  - 以降のファイルアップロードは Azure Blob Storage に保存され、DB には Blob の URL が格納される
+| 変数                              | 説明                     |
+| --------------------------------- | ------------------------ |
+| `SECRET_KEY`                      | JWT 署名キー             |
+| `ACCESS_TOKEN_EXPIRE_MINUTES`     | アクセストークン有効期限 |
+| `SQLALCHEMY_DATABASE_URI`         | Azure SQL への接続文字列 |
+| `AZURE_STORAGE_ACCOUNT_NAME`      | ストレージアカウント名   |
+| `AZURE_STORAGE_CONNECTION_STRING` | Blob 接続文字列          |
+| `AZURE_BLOB_FILES_CONTAINER`      | ファイル格納コンテナ     |
 
 ## ディレクトリ構成
 
