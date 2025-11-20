@@ -13,6 +13,15 @@ class FileBase(BaseModel):
 class FileCreate(FileBase):
     owner_id: int
     blob_name: str | None = None
+    # メタデータフィールド
+    final_product: str
+    issue: str
+    ingredient: str
+    customer: str
+    trial_id: str
+    author: str | None = None
+    file_extension: str
+    status: str = "active"
 
 
 class FileRead(BaseModel):
@@ -24,6 +33,16 @@ class FileRead(BaseModel):
     file_size: int | None = None
     azure_blob_url: str | None = None
     created_at: datetime
+    # メタデータフィールド
+    final_product: str
+    issue: str
+    ingredient: str
+    customer: str
+    trial_id: str
+    author: str | None = None
+    file_extension: str
+    updated_at: datetime
+    status: str
 
     class Config:
         from_attributes = True

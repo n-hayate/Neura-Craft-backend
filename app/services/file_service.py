@@ -29,6 +29,14 @@ class FileService:
             file_size=payload.file_size,
             blob_name=blob_name,
             azure_blob_url=blob_url,
+            final_product=payload.final_product,
+            issue=payload.issue,
+            ingredient=payload.ingredient,
+            customer=payload.customer,
+            trial_id=payload.trial_id,
+            author=payload.author,
+            file_extension=payload.file_extension,
+            status=payload.status,
         )
         self.db.add(file_obj)
         self.db.commit()

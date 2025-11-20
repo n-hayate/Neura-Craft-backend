@@ -1,6 +1,7 @@
 import logging
+import os
 
-from fastapi import APIRouter, Depends, File as FastAPIFile, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File as FastAPIFile, Form, HTTPException, UploadFile, status
 
 from app.api.deps import get_current_user, get_db_session
 from app.db.models.user import User
@@ -27,12 +28,25 @@ def list_files(
 @router.post("/", response_model=FileRead, status_code=201)
 async def upload_file(
     uploaded_file: UploadFile = FastAPIFile(...),
+    final_product: str = Form(...),
+    issue: str = Form(...),
+    ingredient: str = Form(...),
+    customer: str = Form(...),
+    trial_id: str = Form(...),
+    author: str | None = Form(None),
+    file_extension: str | None = Form(None),
+    status: str = Form("active"),
     db=Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
     try:
         data = await uploaded_file.read()
         logger.info(f"Uploading file: {uploaded_file.filename}, size: {len(data)} bytes")
+        
+        # ファイル拡張子が指定されていない場合は、元のファイル名から抽出
+        if not file_extension:
+            _, ext = os.path.splitext(uploaded_file.filename)
+            file_extension = ext.lstrip(".") if ext else ""
         
         blob_service = BlobService()
         blob_name, blob_url = blob_service.upload_bytes(
@@ -47,6 +61,14 @@ async def upload_file(
             original_filename=uploaded_file.filename,
             content_type=uploaded_file.content_type,
             file_size=len(data),
+            final_product=final_product,
+            issue=issue,
+            ingredient=ingredient,
+            customer=customer,
+            trial_id=trial_id,
+            author=author,
+            file_extension=file_extension,
+            status=status,
         )
         return file_service.create(payload, blob_name=blob_name, blob_url=blob_url)
     except HTTPException:
