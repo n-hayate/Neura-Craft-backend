@@ -87,9 +87,9 @@ FastAPI ベースのバックエンドで、Next.js フロントエンドから 
 Swagger UI: `http://localhost:8000/docs`  
 OpenAPI JSON: `http://localhost:8000/openapi.json`
 
-## ファイルアップロード API 仕様
+## ファイルアップロード / メタデータ API 仕様
 
-### `POST /api/v1/files`
+### `POST /api/v1/files`（ファイルアップロード）
 
 ファイルとメタデータをアップロードするエンドポイントです。`multipart/form-data`形式で送信してください。
 
@@ -167,6 +167,139 @@ const result = await response.json();
 ```
 
 フロントエンドでは、この命名規則に基づいてファイル名を解析するのではなく、上記のメタデータフィールドを個別に入力・送信してください。
+
+---
+
+### `GET /api/v1/files/search`（ファイル検索）
+
+ファイル名およびメタデータで検索・絞り込みするエンドポイントです。  
+画面の検索バー + 絞り込みフィルタ用に利用します。
+
+#### クエリパラメータ
+
+| パラメータ名    | 型     | 必須 | 説明                                          |
+| --------------- | ------ | ---- | --------------------------------------------- |
+| `q`             | string | 任意 | ファイル名（`original_filename`）の部分一致   |
+| `final_product` | string | 任意 | 最終製品名での部分一致                        |
+| `issue`         | string | 任意 | 課題感での部分一致                            |
+| `ingredient`    | string | 任意 | 使用原料での部分一致                          |
+| `customer`      | string | 任意 | 提案企業での部分一致                          |
+| `trial_id`      | string | 任意 | 試作 ID での部分一致                          |
+| `author`        | string | 任意 | 開発担当者名での部分一致                      |
+| `sort_by`       | string | 任意 | ソートキー（例: `updated_at_desc`）           |
+| `page`          | int    | 任意 | ページ番号（1 始まり、デフォルト 1）          |
+| `page_size`     | int    | 任意 | 1 ページあたり件数（デフォルト 10, 最大 100） |
+
+サポートされる `sort_by` の例:
+
+- `updated_at_desc`（更新日時 新しい順, デフォルト）
+- `updated_at_asc`
+- `final_product_asc`
+- `final_product_desc`
+- `created_at_desc`
+- `created_at_asc`
+
+#### レスポンス
+
+```json
+{
+  "total_count": 123,
+  "files": [
+    {
+      "id": "uuid-string",
+      "file_name": "example.xlsx",
+      "final_product": "最終製品名",
+      "issue": "課題感",
+      "ingredient": "使用原料",
+      "customer": "提案企業",
+      "trial_id": "0001",
+      "author": "開発担当者名",
+      "status": "active",
+      "updated_at": "2025-01-20T12:00:00Z",
+      "download_link": "https://..." // Blob への URL（開発環境では file:// パス）
+    }
+  ]
+}
+```
+
+フロント側では `files` 配列を一覧表示に使い、`total_count` でページネーション総件数を表示できます。
+
+---
+
+### `GET /api/v1/files/{file_id}`（ファイルメタデータ取得）
+
+1 件のファイルのメタデータとダウンロードリンクを取得します。  
+詳細モーダルや編集画面の初期表示に利用します。
+
+#### パスパラメータ
+
+| パラメータ名 | 型   | 必須 | 説明        |
+| ------------ | ---- | ---- | ----------- |
+| `file_id`    | UUID | 必須 | ファイル ID |
+
+#### レスポンス
+
+`GET /api/v1/files/search` の `files` 要素と同じ形 (`FileWithLink`) を返します:
+
+```json
+{
+  "id": "uuid-string",
+  "file_name": "example.xlsx",
+  "final_product": "最終製品名",
+  "issue": "課題感",
+  "ingredient": "使用原料",
+  "customer": "提案企業",
+  "trial_id": "0001",
+  "author": "開発担当者名",
+  "status": "active",
+  "updated_at": "2025-01-20T12:00:00Z",
+  "download_link": "https://..."
+}
+```
+
+※ 現状は「ログインユーザーが owner のファイルのみ取得可能」です。
+
+---
+
+### `PUT /api/v1/files/{file_id}`（ファイルメタデータ更新）
+
+既存ファイルのメタデータを部分的に更新します。  
+送信された項目だけが更新され、送っていない項目はそのまま維持されます。
+
+#### パスパラメータ
+
+| パラメータ名 | 型   | 必須 | 説明        |
+| ------------ | ---- | ---- | ----------- |
+| `file_id`    | UUID | 必須 | ファイル ID |
+
+#### リクエストボディ（JSON）
+
+すべて任意。更新したい項目だけ送ってください。
+
+```json
+{
+  "final_product": "新しい最終製品名",
+  "issue": "新しい課題感",
+  "ingredient": "新しい使用原料",
+  "customer": "新しい提案企業",
+  "trial_id": "0002",
+  "author": "別の担当者",
+  "status": "inactive"
+}
+```
+
+#### レスポンス
+
+```json
+{
+  "message": "File metadata updated successfully",
+  "file_id": "uuid-string"
+}
+```
+
+更新時には `updated_at` が現在時刻に更新されます。
+
+※ 現状は「ログインユーザーが owner のファイルのみ更新可能」です（将来的に管理者ロールチェックに差し替え予定）。
 
 ## テスト
 
