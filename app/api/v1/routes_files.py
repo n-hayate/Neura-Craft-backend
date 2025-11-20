@@ -124,7 +124,7 @@ async def upload_file(
     trial_id: str = Form(...),
     author: str | None = Form(None),
     file_extension: str | None = Form(None),
-    status: str = Form("active"),
+    file_status: str = Form("active"),
     db=Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -157,7 +157,7 @@ async def upload_file(
             trial_id=trial_id,
             author=author,
             file_extension=file_extension,
-            status=status,
+            status=file_status,
         )
         return file_service.create(payload, blob_name=blob_name, blob_url=blob_url)
     except HTTPException:
