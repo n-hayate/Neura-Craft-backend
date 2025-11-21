@@ -45,6 +45,19 @@ class FileService:
         self.db.refresh(file_obj)
         return file_obj
 
+    def increment_download_count(self, file_id: str) -> File:
+        """ダウンロード数をアトミックにインクリメント"""
+        # 存在確認
+        self.get(file_id)
+        
+        self.db.query(File).filter(File.id == file_id).update(
+            {"download_count": File.download_count + 1},
+            synchronize_session=False
+        )
+        self.db.commit()
+        return self.get(file_id)
+
+
     def get(self, file_id: str) -> File:
         file_obj = self.db.query(File).filter(File.id == file_id).first()
         if not file_obj:
@@ -133,3 +146,16 @@ class FileService:
         self.db.commit()
         self.db.refresh(file_obj)
         return file_obj
+
+    def increment_download_count(self, file_id: str) -> File:
+        """ダウンロード数をアトミックにインクリメント"""
+        # 存在確認
+        self.get(file_id)
+        
+        self.db.query(File).filter(File.id == file_id).update(
+            {"download_count": File.download_count + 1},
+            synchronize_session=False
+        )
+        self.db.commit()
+        return self.get(file_id)
+

@@ -9,6 +9,7 @@ FastAPI ベースのバックエンドで、Next.js フロントエンドから 
 - Azure Blob Storage SDK
 - JWT (python-jose) + Passlib
 - Alembic (マイグレーション)
+- Janome (形態素解析)
 
 ## セットアップ
 
@@ -75,14 +76,14 @@ FastAPI ベースのバックエンドで、Next.js フロントエンドから 
 
 ## Next.js 画面と API 対応表
 
-| Next.js 画面 (想定パス)        | 利用 API                     |
-| ------------------------------ | ---------------------------- |
-| `/login` (認証)                | `POST /api/v1/auth/login`    |
-| `/signup` (新規登録)           | `POST /api/v1/auth/register` |
-| `/dashboard` (ユーザー情報)    | `GET /api/v1/users/me`       |
-| `/admin/users` (ユーザー管理)  | `GET/POST/PUT /api/v1/users` |
-| `/files` (ファイル一覧)        | `GET /api/v1/files`          |
-| `/files/upload` (ファイル登録) | `POST /api/v1/files`         |
+| Next.js 画面 (想定パス)        | 利用 API                                              |
+| ------------------------------ | ----------------------------------------------------- |
+| `/login` (認証)                | `POST /api/v1/auth/login`                             |
+| `/signup` (新規登録)           | `POST /api/v1/auth/register`                          |
+| `/dashboard` (ユーザー情報)    | `GET /api/v1/users/me`, `GET /api/v1/files/dashboard` |
+| `/admin/users` (ユーザー管理)  | `GET/POST/PUT /api/v1/users`                          |
+| `/files` (ファイル一覧)        | `GET /api/v1/files`                                   |
+| `/files/upload` (ファイル登録) | `POST /api/v1/files`                                  |
 
 Swagger UI: `http://localhost:8000/docs`  
 OpenAPI JSON: `http://localhost:8000/openapi.json`
@@ -300,6 +301,89 @@ const result = await response.json();
 更新時には `updated_at` が現在時刻に更新されます。
 
 ※ 現状は「ログインユーザーが owner のファイルのみ更新可能」です（将来的に管理者ロールチェックに差し替え予定）。
+
+---
+
+### `POST /api/v1/files/{file_id}/download`（ダウンロード URL 取得 & カウント）
+
+ファイルをダウンロードするための URL を取得し、ダウンロード回数をカウントアップします。
+フロントエンドでは、この API から返された URL を使用してブラウザでダウンロードを開始させてください。
+
+#### パスパラメータ
+
+| パラメータ名 | 型   | 必須 | 説明        |
+| ------------ | ---- | ---- | ----------- |
+| `file_id`    | UUID | 必須 | ファイル ID |
+
+#### レスポンス
+
+```json
+{
+  "download_url": "https://.../files/uuid-filename.xlsx"
+  // 開発環境では "file://..." のようなローカルパスが返る場合があります
+}
+```
+
+---
+
+### `POST /api/v1/files/{file_id}/reference`（参照登録）
+
+検索したファイルに対して「参照した」という意味で、自身の PJ コード（Trial ID）を紐付けます。
+既に同じユーザー・同じファイル・同じ Trial ID で登録済みの場合は、既存の登録情報を返します（409 エラーにはなりません）。
+
+#### パスパラメータ
+
+| パラメータ名 | 型   | 必須 | 説明        |
+| ------------ | ---- | ---- | ----------- |
+| `file_id`    | UUID | 必須 | ファイル ID |
+
+#### リクエストボディ（JSON）
+
+```json
+{
+  "trial_id": "Trial-2025-B" // 参照元のPJコード（最大50文字）
+}
+```
+
+#### レスポンス
+
+```json
+{
+  "id": "uuid-string",
+  "file_id": "uuid-string",
+  "trial_id": "Trial-2025-B",
+  "user_id": 1,
+  "created_at": "2025-11-21T12:00:00Z"
+}
+```
+
+---
+
+### `GET /api/v1/files/dashboard`（ダッシュボード統計情報）
+
+ダッシュボード表示用の統計データを取得します。結果は 1 時間キャッシュされます。
+
+#### レスポンス
+
+```json
+{
+  "total_files": 150,
+  "new_files_last_month": 12,
+  "usage_ranking": [
+    { "name": "Product A", "count": 45 },
+    { "name": "Product B", "count": 30 }
+  ],
+  "ingredient_ranking": [
+    { "name": "Sugar", "count": 50 },
+    { "name": "Salt", "count": 20 }
+  ],
+  "issue_word_cloud": {
+    "改善": 15,
+    "コスト": 10,
+    "風味": 8
+  }
+}
+```
 
 ## テスト
 

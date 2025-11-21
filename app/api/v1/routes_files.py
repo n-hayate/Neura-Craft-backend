@@ -12,12 +12,26 @@ from app.schemas.file import (
     FileSearchResponse,
     FileWithLink,
 )
+from app.schemas.reference import ReferenceCreate, ReferenceRead
+from app.schemas.dashboard import DashboardResponse
 from app.services.blob_service import BlobService
 from app.services.file_service import FileService
+from app.services.reference_service import ReferenceService
+from app.services.dashboard_service import DashboardService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/files", tags=["Files"])
+
+
+@router.get("/dashboard", response_model=DashboardResponse)
+def get_dashboard(
+    db=Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    """ダッシュボード用データ取得"""
+    service = DashboardService(db)
+    return service.get_dashboard_data()
 
 
 @router.get("/", response_model=list[FileRead])
@@ -114,6 +128,42 @@ def get_file_metadata(
     )
 
 
+@router.post("/{file_id}/download", response_model=dict)
+def download_file(
+    file_id: str,
+    db=Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    """ファイルダウンロードURL取得 & カウントアップ"""
+    service = FileService(db)
+    file_obj = service.get(file_id)
+    
+    # 権限チェック
+    # if file_obj.owner_id != current_user.id:
+    #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    
+    # カウントアップ
+    service.increment_download_count(file_id)
+    
+    return {"download_url": file_obj.azure_blob_url}
+
+
+@router.post("/{file_id}/reference", response_model=ReferenceRead)
+def create_reference(
+    file_id: str,
+    payload: ReferenceCreate,
+    db=Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    """ファイル参照（Reference）作成"""
+    file_service = FileService(db)
+    # ファイル存在確認
+    file_service.get(file_id)
+    
+    service = ReferenceService(db)
+    return service.create(file_id, current_user.id, payload)
+
+
 @router.post("/", response_model=FileRead, status_code=201)
 async def upload_file(
     uploaded_file: UploadFile = FastAPIFile(...),
@@ -202,4 +252,3 @@ def delete_file(
     blob_service = BlobService()
     blob_service.delete_blob(file_obj.blob_name)
     file_service.delete(file_id)
-
