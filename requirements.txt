@@ -28,7 +28,7 @@ Mako==1.3.10
 MarkupSafe==3.0.3
 msal==1.34.0
 msal-extensions==1.3.1
--e git+https://github.com/n-hayate/Neura-Craft-backend.git@eb973a4eb5aad10e372edde61d41c1b55f376270#egg=neura_craft_backend
+-e git+https://github.com/n-hayate/Neura-Craft-backend.git@33740c3dbee3ded00de88ed63a27f40f1a92c44e#egg=neura_craft_backend
 passlib==1.7.4
 pyasn1==0.6.1
 pycparser==2.23

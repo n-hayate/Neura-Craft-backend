@@ -28,7 +28,7 @@ class File(Base):
     issue: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     ingredient: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     customer: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    trial_id: Mapped[str] = mapped_column(String(4), nullable=False, index=True)
+    trial_id: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     author: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     file_extension: Mapped[str] = mapped_column(String(10), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

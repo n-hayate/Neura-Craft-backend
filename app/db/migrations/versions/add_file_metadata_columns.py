@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.exc import NoSuchTableError
 
 
 # revision identifiers, used by Alembic.
@@ -19,11 +20,22 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # メタデータカラムを追加（既に存在する場合はスキップ）
-    # SQLiteでは関数ベースのデフォルト値が使えないため、すべてNULL許可で追加
     conn = op.get_bind()
+
+    # Azure SQL（MSSQL）の新規DBでは、初期マイグレーションで既に
+    # 最終的なスキーマ（メタデータカラム・インデックス含む）が作成される想定のため、
+    # このマイグレーションは実質的に何もしないようにする。
+    if conn.dialect.name == "mssql":
+        return
+
     inspector = sa.inspect(conn)
-    existing_columns = [col['name'] for col in inspector.get_columns('files')]
+    try:
+        # メタデータカラムを追加（既に存在する場合はスキップ）
+        existing_columns = [col["name"] for col in inspector.get_columns("files")]
+    except NoSuchTableError:
+        # 新規DBで、まだ files テーブルが存在しない場合は何もしない
+        # （初期マイグレーション側で最新スキーマのテーブルを作成する想定）
+        return
     
     columns_to_add = {
         'final_product': sa.Column('final_product', sa.String(255), nullable=True),
