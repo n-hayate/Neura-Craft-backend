@@ -1,10 +1,10 @@
 from datetime import datetime
 from typing import List, Tuple
 
-from fastapi import HTTPException, status
-from sqlalchemy import asc, desc
+from sqlalchemy import asc, desc, or_, and_
 from sqlalchemy.orm import Session
 
+from app.core.utils import normalize_tags
 from app.db.models.file import File
 from app.schemas.file import FileCreate, FileMetadataUpdate
 
@@ -31,10 +31,10 @@ class FileService:
             file_size=payload.file_size,
             blob_name=blob_name,
             azure_blob_url=blob_url,
-            final_product=payload.final_product,
-            issue=payload.issue,
-            ingredient=payload.ingredient,
-            customer=payload.customer,
+            final_product=normalize_tags(payload.final_product),
+            issue=normalize_tags(payload.issue),
+            ingredient=normalize_tags(payload.ingredient),
+            customer=normalize_tags(payload.customer),
             trial_id=payload.trial_id,
             author=payload.author,
             file_extension=payload.file_extension,
@@ -84,20 +84,36 @@ class FileService:
         page: int = 1,
         page_size: int = 10,
     ) -> Tuple[int, List[File]]:
-        """ファイル検索（オーナー単位）"""
+        """ファイル検索（オーナー単位）- AND検索 & 横断検索対応"""
 
         query = self.db.query(File).filter(File.owner_id == owner_id)
 
-        # フリーテキスト（ファイル名）検索
+        # 1. フリーテキスト (q) の横断検索 & AND検索
         if q:
-            like = f"%{q}%"
-            query = query.filter(File.original_filename.ilike(like))
+            keywords = q.replace('　', ' ').split()
+            for word in keywords:
+                like_word = f"%{word}%"
+                # 各キーワードについて、「どれかのフィールドに含まれていればOK」
+                query = query.filter(
+                    or_(
+                        File.original_filename.ilike(like_word),
+                        File.final_product.ilike(like_word),
+                        File.issue.ilike(like_word),
+                        File.ingredient.ilike(like_word),
+                        File.customer.ilike(like_word),
+                        File.trial_id.ilike(like_word),
+                        File.author.ilike(like_word),
+                    )
+                )
 
-        # メタデータでの絞り込み
+        # 2. フィールドごとの絞り込み (スペース区切りでAND検索)
         def apply_like(column, value: str | None):
             nonlocal query
             if value:
-                query = query.filter(column.ilike(f"%{value}%"))
+                # スペース区切りで分割してAND検索
+                keywords = value.replace('　', ' ').split()
+                for word in keywords:
+                    query = query.filter(column.ilike(f"%{word}%"))
 
         apply_like(File.final_product, final_product)
         apply_like(File.issue, issue)
@@ -136,6 +152,9 @@ class FileService:
 
         data = payload.model_dump(exclude_unset=True)
         for field, value in data.items():
+            # 正規化対象フィールドの場合は正規化を実施
+            if field in ["final_product", "issue", "ingredient", "customer"]:
+                value = normalize_tags(value)
             setattr(file_obj, field, value)
 
         # updated_at を明示的に更新（SQLite 対応）

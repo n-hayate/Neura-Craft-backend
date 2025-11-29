@@ -10,6 +10,7 @@ FastAPI ベースのバックエンドで、Next.js フロントエンドから 
 - JWT (python-jose) + Passlib
 - Alembic (マイグレーション)
 - Janome (形態素解析)
+- ReportLab / OpenPyXL (データ生成)
 
 ## セットアップ
 
@@ -29,6 +30,15 @@ FastAPI ベースのバックエンドで、Next.js フロントエンドから 
    uvicorn app.main:app --reload
    ```
 
+## データシード（デモ用データ投入）
+
+デモ用にリアルな食品開発データ（50 件〜）を自動投入するスクリプトを用意しています。
+実行すると、`demo@example.com` ユーザーが作成され、DB と Blob Storage にデータが投入されます。
+
+```bash
+python scripts/seed_data.py
+```
+
 ## 環境変数
 
 | 変数                              | 説明                                      |
@@ -40,6 +50,7 @@ FastAPI ベースのバックエンドで、Next.js フロントエンドから 
 | `AZURE_STORAGE_ACCOUNT_NAME`      | ストレージアカウント名                    |
 | `AZURE_STORAGE_CONNECTION_STRING` | Blob 接続文字列                           |
 | `AZURE_BLOB_FILES_CONTAINER`      | ファイル格納コンテナ                      |
+| `AZURE_BLOB_THUMBNAILS_CONTAINER` | サムネイル格納コンテナ                    |
 | `LOCAL_STORAGE_PATH`              | 開発時にファイルを保存するローカルパス    |
 
 ### ストレージ設定（ローカル / Azure）
@@ -55,6 +66,7 @@ FastAPI ベースのバックエンドで、Next.js フロントエンドから 
   - `.env` で `APP_ENV=production` など、`development` 以外の値を設定
   - `AZURE_STORAGE_CONNECTION_STRING` に実際の接続文字列を設定
   - `AZURE_BLOB_FILES_CONTAINER` に利用するコンテナ名を設定（例: `files`）
+  - `AZURE_BLOB_THUMBNAILS_CONTAINER` にサムネイル用コンテナ名を設定（例: `thumbnails`）
   - 以降のファイルアップロードは Azure Blob Storage に保存され、DB には Blob の URL が格納される
 
 ## ディレクトリ構成
@@ -178,18 +190,25 @@ const result = await response.json();
 
 #### クエリパラメータ
 
-| パラメータ名    | 型     | 必須 | 説明                                          |
-| --------------- | ------ | ---- | --------------------------------------------- |
-| `q`             | string | 任意 | ファイル名（`original_filename`）の部分一致   |
-| `final_product` | string | 任意 | 最終製品名での部分一致                        |
-| `issue`         | string | 任意 | 課題感での部分一致                            |
-| `ingredient`    | string | 任意 | 使用原料での部分一致                          |
-| `customer`      | string | 任意 | 提案企業での部分一致                          |
-| `trial_id`      | string | 任意 | 試作 ID での部分一致                          |
-| `author`        | string | 任意 | 開発担当者名での部分一致                      |
-| `sort_by`       | string | 任意 | ソートキー（例: `updated_at_desc`）           |
-| `page`          | int    | 任意 | ページ番号（1 始まり、デフォルト 1）          |
-| `page_size`     | int    | 任意 | 1 ページあたり件数（デフォルト 10, 最大 100） |
+| パラメータ名    | 型     | 必須 | 説明                                                                                              |
+| --------------- | ------ | ---- | ------------------------------------------------------------------------------------------------- |
+| `q`             | string | 任意 | ファイル名および全メタデータ（課題、原料等）の部分一致・横断検索（スペース区切りで AND 検索対応） |
+| `final_product` | string | 任意 | 最終製品名での部分一致（スペース区切りで AND 検索対応）                                           |
+| `issue`         | string | 任意 | 課題感での部分一致（スペース区切りで AND 検索対応）                                               |
+| `ingredient`    | string | 任意 | 使用原料での部分一致（スペース区切りで AND 検索対応）                                             |
+| `customer`      | string | 任意 | 提案企業での部分一致（スペース区切りで AND 検索対応）                                             |
+| `trial_id`      | string | 任意 | 試作 ID での部分一致                                                                              |
+| `author`        | string | 任意 | 開発担当者名での部分一致                                                                          |
+| `sort_by`       | string | 任意 | ソートキー（例: `updated_at_desc`）                                                               |
+| `page`          | int    | 任意 | ページ番号（1 始まり、デフォルト 1）                                                              |
+| `page_size`     | int    | 任意 | 1 ページあたり件数（デフォルト 10, 最大 100）                                                     |
+
+**検索ロジックについて:**
+
+- `q` パラメータは、ファイル名だけでなく、メタデータ（製品名、課題、原料、顧客名、試作 ID、作成者）も対象に検索します。
+- スペース区切りで複数のキーワードを指定した場合、**AND 検索**となります（すべてのキーワードを含むレコードがヒット）。
+  - 例: `q="塩味 改善"` → 「塩味」と「改善」の両方が（ファイル名またはメタデータのどこかに）含まれるファイルを検索。
+- 各絞り込みフィールド（`issue` など）も同様にスペース区切りで AND 検索が可能です。
 
 サポートされる `sort_by` の例:
 
@@ -259,6 +278,43 @@ const result = await response.json();
 ```
 
 ※ 現状は「ログインユーザーが owner のファイルのみ取得可能」です。
+
+---
+
+### `GET /api/v1/files/{file_id}/preview-url`（プレビュー URL 取得）
+
+ファイルのプレビュー用 URL を取得します。Office ファイルは Microsoft Office Online Viewer 形式、PDF は直接リンクを返します。
+
+#### パスパラメータ
+
+| パラメータ名 | 型   | 必須 | 説明        |
+| ------------ | ---- | ---- | ----------- |
+| `file_id`    | UUID | 必須 | ファイル ID |
+
+#### レスポンス
+
+```json
+{
+  "preview_url": "https://view.officeapps.live.com/op/embed.aspx?src=...",
+  "type": "office" // "office", "pdf", "local", "other"
+}
+```
+
+---
+
+### `GET /api/v1/files/{file_id}/thumbnail`（サムネイル取得）
+
+ファイルのサムネイル（PNG 画像）を取得します。
+
+#### パスパラメータ
+
+| パラメータ名 | 型   | 必須 | 説明        |
+| ------------ | ---- | ---- | ----------- |
+| `file_id`    | UUID | 必須 | ファイル ID |
+
+#### レスポンス
+
+`image/png` 形式のバイナリデータ。
 
 ---
 
