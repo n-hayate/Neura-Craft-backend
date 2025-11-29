@@ -111,13 +111,13 @@ class BlobService:
         else:
             return self.client.get_blob_client(self.container_name, blob_name).exists()
 
-    def generate_sas_url(self, blob_name: str, expiry_hours: int = 1) -> str:
+    def generate_sas_url(self, blob_name: str, expiry_minutes: int = 60) -> str:
         """
         指定されたBlobへの一時的なアクセスURL (SAS URL) を生成する
         
         Args:
             blob_name: Blob名
-            expiry_hours: 有効期限（時間）。デフォルト1時間。
+            expiry_minutes: 有効期限（分）。デフォルト60分。
             
         Returns:
             SAS付きのURL
@@ -158,7 +158,7 @@ class BlobService:
                     blob_name=blob_name,
                     account_key=account_key,
                     permission=BlobSasPermissions(read=True),
-                    expiry=datetime.utcnow() + timedelta(hours=expiry_hours)
+                    expiry=datetime.utcnow() + timedelta(minutes=expiry_minutes)
                 )
                 
                 # Blob ClientからURLを取得し、SASトークンを付与

@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Unicode, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Unicode, func, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -39,5 +39,6 @@ class File(Base):
         index=True
     )
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="active")
+    is_preview_hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     owner = relationship("User", backref="files")
