@@ -128,24 +128,52 @@ def get_file_metadata(
     )
 
 
-@router.post("/{file_id}/download", response_model=dict)
-def download_file(
+@router.get("/{file_id}/preview-url", response_model=dict)
+def get_preview_url(
     file_id: str,
     db=Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    """ファイルダウンロードURL取得 & カウントアップ"""
-    service = FileService(db)
-    file_obj = service.get(file_id)
+    """
+    ファイルのプレビュー用URL (SAS付き) を取得する。
+    Officeファイルの場合は、Office Online Viewerの埋め込みURLを返す。
+    PDFの場合は、SAS付きの直接リンクを返す。
+    """
+    file_service = FileService(db)
+    file_obj = file_service.get(file_id)
     
-    # 権限チェック
-    # if file_obj.owner_id != current_user.id:
-    #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    # 拡張子チェック
+    filename = file_obj.original_filename
+    _, ext = os.path.splitext(filename)
+    ext = ext.lower() if ext else ""
     
-    # カウントアップ
-    service.increment_download_count(file_id)
+    # Blob ServiceでSAS URL生成
+    blob_service = BlobService()
+    try:
+        sas_url = blob_service.generate_sas_url(file_obj.blob_name, expiry_hours=1)
+    except Exception as e:
+        logger.error(f"Failed to generate SAS URL for file {file_id}: {e}")
+        raise HTTPException(status_code=500, detail="Could not generate preview URL")
+        
+    # ローカル環境(file://)の場合はOffice Online Viewerは使えないため、そのまま返す
+    if sas_url.startswith("file://"):
+        return {"preview_url": sas_url, "type": "local"}
     
-    return {"download_url": file_obj.azure_blob_url}
+    # URLエンコード (Office Online Viewerに渡すため)
+    from urllib.parse import quote
+    encoded_sas_url = quote(sas_url, safe="")
+    
+    if ext in [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"]:
+        # Office Online Viewer
+        # srcパラメータにエンコードされたURLを渡す
+        preview_url = f"https://view.officeapps.live.com/op/embed.aspx?src={encoded_sas_url}"
+        return {"preview_url": preview_url, "type": "office"}
+    elif ext == ".pdf":
+        # PDFはブラウザで直接開けるのでSAS URLそのまま
+        return {"preview_url": sas_url, "type": "pdf"}
+    else:
+        # その他のファイルはプレビュー非対応（またはダウンロードさせる）
+        return {"preview_url": sas_url, "type": "other"}
 
 
 @router.post("/{file_id}/reference", response_model=ReferenceRead)

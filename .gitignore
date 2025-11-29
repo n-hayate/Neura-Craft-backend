@@ -1,21 +1,29 @@
-.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment
+.env
+.venv
 venv/
 env/
-.env
-__pycache__/
-*.pyc
-.mypy_cache/
-.pytest_cache/
-alembic/
-dist/
-build/
-uploads/
-*.db
-.DS_Store
-Thumbs.db
-*.log
-coverage.xml
-.idea/
+
+# IDE
 .vscode/
+.idea/
 
+# Database
+*.db
+*.sqlite3
 
+# Logs
+*.log
+
+# Uploads (Local storage)
+uploads/
+data/
+
+# Scripts Assets (Generated test data)
+scripts/assets/
