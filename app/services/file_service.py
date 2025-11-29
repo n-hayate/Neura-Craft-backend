@@ -13,11 +13,18 @@ class FileService:
     def __init__(self, db: Session):
         self.db = db
 
-    def list_by_owner(self, owner_id: int, limit: int = 50, offset: int = 0) -> List[File]:
+    def list_by_owner(
+        self,
+        owner_id: int | None = None,
+        limit: int = 50,
+        offset: int = 0
+    ) -> List[File]:
+        query = self.db.query(File)
+        if owner_id is not None:
+            query = query.filter(File.owner_id == owner_id)
+            
         return (
-            self.db.query(File)
-            .filter(File.owner_id == owner_id)
-            .order_by(File.created_at.desc())
+            query.order_by(File.created_at.desc())
             .offset(offset)
             .limit(limit)
             .all()
@@ -39,6 +46,7 @@ class FileService:
             author=payload.author,
             file_extension=payload.file_extension,
             status=payload.status,
+            is_preview_hidden=payload.is_preview_hidden,
         )
         self.db.add(file_obj)
         self.db.commit()
@@ -72,7 +80,7 @@ class FileService:
     def search(
         self,
         *,
-        owner_id: int,
+        owner_id: int | None = None,
         q: str | None = None,
         final_product: str | None = None,
         issue: str | None = None,
@@ -84,9 +92,13 @@ class FileService:
         page: int = 1,
         page_size: int = 10,
     ) -> Tuple[int, List[File]]:
-        """ファイル検索（オーナー単位）- AND検索 & 横断検索対応"""
+        """ファイル検索（オーナー単位または全体）- AND検索 & 横断検索対応"""
 
-        query = self.db.query(File).filter(File.owner_id == owner_id)
+        query = self.db.query(File)
+        
+        # owner_idが指定されている場合のみ絞り込む
+        if owner_id is not None:
+            query = query.filter(File.owner_id == owner_id)
 
         # 1. フリーテキスト (q) の横断検索 & AND検索
         if q:

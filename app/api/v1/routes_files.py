@@ -36,18 +36,21 @@ def get_dashboard(
 
 @router.get("/", response_model=list[FileRead])
 def list_files(
-    db=Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    mine_only: bool = Query(False, description="自分のファイルのみ表示する場合はtrue"),
     limit: int = 50,
     offset: int = 0,
+    db=Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ):
     service = FileService(db)
-    return service.list_by_owner(current_user.id, limit=limit, offset=offset)
+    owner_id = current_user.id if mine_only else None
+    return service.list_by_owner(owner_id=owner_id, limit=limit, offset=offset)
 
 
 @router.get("/search", response_model=FileSearchResponse)
 def search_files(
     q: str | None = Query(None, description="ファイル名での部分一致検索"),
+    mine_only: bool = Query(False, description="自分のファイルのみ検索する場合はtrue"),
     final_product: str | None = Query(None),
     issue: str | None = Query(None),
     ingredient: str | None = Query(None),
@@ -62,8 +65,10 @@ def search_files(
 ):
     """ファイル検索 API"""
     service = FileService(db)
+    owner_id = current_user.id if mine_only else None
+    
     total_count, files = service.search(
-        owner_id=current_user.id,
+        owner_id=owner_id,
         q=q,
         final_product=final_product,
         issue=issue,
@@ -142,6 +147,9 @@ def get_preview_url(
     file_service = FileService(db)
     file_obj = file_service.get(file_id)
     
+    if file_obj.is_preview_hidden:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Preview is disabled for this file")
+
     # 拡張子チェック
     filename = file_obj.original_filename
     _, ext = os.path.splitext(filename)
@@ -150,7 +158,7 @@ def get_preview_url(
     # Blob ServiceでSAS URL生成
     blob_service = BlobService()
     try:
-        sas_url = blob_service.generate_sas_url(file_obj.blob_name, expiry_hours=1)
+        sas_url = blob_service.generate_sas_url(file_obj.blob_name, expiry_minutes=60)
     except Exception as e:
         logger.error(f"Failed to generate SAS URL for file {file_id}: {e}")
         raise HTTPException(status_code=500, detail="Could not generate preview URL")
@@ -203,6 +211,7 @@ async def upload_file(
     author: str | None = Form(None),
     file_extension: str | None = Form(None),
     file_status: str = Form("active"),
+    is_preview_hidden: bool = Form(False),
     db=Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -236,6 +245,7 @@ async def upload_file(
             author=author,
             file_extension=file_extension,
             status=file_status,
+            is_preview_hidden=is_preview_hidden,
         )
         return file_service.create(payload, blob_name=blob_name, blob_url=blob_url)
     except HTTPException:

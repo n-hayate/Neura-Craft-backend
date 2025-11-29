@@ -22,6 +22,7 @@ class FileCreate(FileBase):
     author: str | None = None
     file_extension: str
     status: str = "active"
+    is_preview_hidden: bool = False
 
 
 class FileRead(BaseModel):
@@ -43,6 +44,7 @@ class FileRead(BaseModel):
     file_extension: str
     updated_at: datetime | None = None
     status: str
+    is_preview_hidden: bool
 
     class Config:
         from_attributes = True
