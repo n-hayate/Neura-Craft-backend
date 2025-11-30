@@ -1,17 +1,24 @@
+import logging
 from datetime import datetime
 from typing import List, Tuple
 
-from sqlalchemy import asc, desc, or_, and_
+from sqlalchemy import asc, desc, or_
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.utils import normalize_tags
 from app.db.models.file import File
 from app.schemas.file import FileCreate, FileMetadataUpdate
+from app.services.search_service import SearchService
+
+logger = logging.getLogger(__name__)
+settings = get_settings()
 
 
 class FileService:
     def __init__(self, db: Session):
         self.db = db
+        self.search_service = SearchService()
 
     def list_by_owner(
         self,
@@ -51,6 +58,13 @@ class FileService:
         self.db.add(file_obj)
         self.db.commit()
         self.db.refresh(file_obj)
+        
+        # インデックス更新
+        try:
+            self.search_service.upsert_document(file_obj)
+        except Exception as e:
+            logger.error(f"Failed to index file on create: {e}")
+
         return file_obj
 
     def increment_download_count(self, file_id: str) -> File:
@@ -69,6 +83,10 @@ class FileService:
     def get(self, file_id: str) -> File:
         file_obj = self.db.query(File).filter(File.id == file_id).first()
         if not file_obj:
+            # HTTPExceptionはAPI層でキャッチされる
+            # ここではimportしていないのでstatus codeを直接使うか、呼び出し元でhandleする
+            # existing implementation relied on fastapi import inside service which is slightly anti-pattern but I will follow existing imports if any
+            from fastapi import HTTPException, status
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
         return file_obj
 
@@ -76,6 +94,12 @@ class FileService:
         file_obj = self.get(file_id)
         self.db.delete(file_obj)
         self.db.commit()
+        
+        # インデックス削除
+        try:
+            self.search_service.delete_document(file_id)
+        except Exception as e:
+            logger.error(f"Failed to delete document from index: {e}")
 
     def search(
         self,
@@ -94,6 +118,60 @@ class FileService:
     ) -> Tuple[int, List[File]]:
         """ファイル検索（オーナー単位または全体）- AND検索 & 横断検索対応"""
 
+        # Azure AI Search が有効な場合はそちらを優先
+        if settings.search_backend == "azure":
+            try:
+                filter_params = {
+                    "final_product": final_product,
+                    "issue": issue,
+                    "ingredient": ingredient,
+                    "customer": customer,
+                    "trial_id": trial_id,
+                    "author": author,
+                }
+                
+                search_result = self.search_service.search(
+                    q=q,
+                    filter_params=filter_params,
+                    owner_id=owner_id,
+                    sort_by=sort_by,
+                    page=page,
+                    page_size=page_size,
+                )
+                
+                # 結果をFileモデル（非永続化オブジェクト）にマッピング
+                files = []
+                for doc in search_result["files"]:
+                    # updated_atの変換
+                    updated_at_val = doc.get("updated_at")
+                    if isinstance(updated_at_val, str):
+                        try:
+                            updated_at_val = datetime.fromisoformat(updated_at_val.replace('Z', '+00:00'))
+                        except ValueError:
+                            updated_at_val = None
+                            
+                    f = File(
+                        id=doc["id"],
+                        original_filename=doc["file_name"],
+                        final_product=doc["final_product"],
+                        issue=doc["issue"],
+                        ingredient=doc["ingredient"],
+                        customer=doc["customer"],
+                        trial_id=doc["trial_id"],
+                        author=doc["author"],
+                        status=doc["status"],
+                        updated_at=updated_at_val,
+                        azure_blob_url=doc.get("download_link"),
+                    )
+                    files.append(f)
+                
+                return search_result["total_count"], files
+
+            except Exception as e:
+                logger.error(f"Azure Search failed, falling back to SQL: {e}")
+                # フォールバックしてSQL検索を実行
+
+        # === 以下、既存のSQL検索ロジック ===
         query = self.db.query(File)
         
         # owner_idが指定されている場合のみ絞り込む
@@ -176,17 +254,11 @@ class FileService:
         self.db.add(file_obj)
         self.db.commit()
         self.db.refresh(file_obj)
-        return file_obj
-
-    def increment_download_count(self, file_id: str) -> File:
-        """ダウンロード数をアトミックにインクリメント"""
-        # 存在確認
-        self.get(file_id)
         
-        self.db.query(File).filter(File.id == file_id).update(
-            {"download_count": File.download_count + 1},
-            synchronize_session=False
-        )
-        self.db.commit()
-        return self.get(file_id)
+        # インデックス更新
+        try:
+            self.search_service.upsert_document(file_obj)
+        except Exception as e:
+            logger.error(f"Failed to update index on metadata update: {e}")
 
+        return file_obj

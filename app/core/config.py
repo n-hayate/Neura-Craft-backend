@@ -66,7 +66,15 @@ class Settings(BaseSettings):
         "AccountKey=storage-key;EndpointSuffix=core.windows.net"
     )
     azure_blob_files_container: str = "files"
+    azure_blob_thumbnails_container: str = "thumbnails"
     local_storage_path: str = Field(default="uploads")  # 開発環境用のローカルストレージパス
+
+    # Azure AI Search
+    search_backend: str = Field(default="sql")  # "sql" or "azure"
+    azure_search_endpoint: str = ""
+    azure_search_api_key: str = ""
+    azure_search_index_name: str = "files-index"
+
 
 
 @lru_cache
