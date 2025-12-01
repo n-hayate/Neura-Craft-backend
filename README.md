@@ -52,6 +52,10 @@ python scripts/seed_data.py
 | `AZURE_BLOB_FILES_CONTAINER`      | ファイル格納コンテナ                      |
 | `AZURE_BLOB_THUMBNAILS_CONTAINER` | サムネイル格納コンテナ                    |
 | `LOCAL_STORAGE_PATH`              | 開発時にファイルを保存するローカルパス    |
+| `SEARCH_BACKEND`                  | 検索エンジン (`azure` or `sql`)           |
+| `AZURE_SEARCH_ENDPOINT`           | Azure AI Search エンドポイント URL        |
+| `AZURE_SEARCH_API_KEY`            | Azure AI Search API キー (Admin Key)      |
+| `AZURE_SEARCH_INDEX_NAME`         | インデックス名 (例: `files-index`)        |
 
 ### ストレージ設定（ローカル / Azure）
 
@@ -68,6 +72,28 @@ python scripts/seed_data.py
   - `AZURE_BLOB_FILES_CONTAINER` に利用するコンテナ名を設定（例: `files`）
   - `AZURE_BLOB_THUMBNAILS_CONTAINER` にサムネイル用コンテナ名を設定（例: `thumbnails`）
   - 以降のファイルアップロードは Azure Blob Storage に保存され、DB には Blob の URL が格納される
+
+## Azure AI Search の設定
+
+本プロジェクトでは、検索エンジンとして **Azure AI Search** を推奨しています。
+
+### 有効化手順
+
+1. Azure Portal で Azure AI Search リソースを作成する。
+2. `.env` に以下の変数を設定する。
+   ```bash
+   SEARCH_BACKEND=azure
+   AZURE_SEARCH_ENDPOINT=https://<your-service-name>.search.windows.net
+   AZURE_SEARCH_API_KEY=<admin-key>
+   AZURE_SEARCH_INDEX_NAME=files-index
+   ```
+3. 既存データがある場合、以下のスクリプトを実行してインデックスを作成・データ登録する。
+   ```bash
+   python scripts/reindex_search.py
+   ```
+
+※ `SEARCH_BACKEND=sql` (または未設定) の場合、従来の SQL `LIKE` 検索が動作します。
+※ Azure Search の設定が正しくない場合や接続エラー時は、自動的に SQL 検索にフォールバックします。
 
 ## ディレクトリ構成
 
