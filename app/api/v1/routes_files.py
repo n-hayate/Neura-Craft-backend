@@ -1,7 +1,17 @@
 import logging
 import os
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File as FastAPIFile, Form, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File as FastAPIFile,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 
 from app.api.deps import get_current_user, get_db_session
 from app.db.models.user import User
@@ -22,6 +32,50 @@ from app.services.dashboard_service import DashboardService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/files", tags=["Files"])
+
+
+def _extract_metadata_from_filename(filename: str) -> dict[str, str | None]:
+    stem, _ = os.path.splitext(filename)
+    parts = stem.split("_")
+    
+    fields = ["application", "issue", "ingredient", "customer", "trial_id", "author"]
+    values = {field: None for field in fields}
+    
+    # 先頭から順にマッピングする
+    for i, part in enumerate(parts):
+        if i >= len(fields):
+            break
+        cleaned = part.strip()
+        values[fields[i]] = cleaned if cleaned else None
+            
+    return values
+
+
+def _to_file_with_link(file_obj, blob_service: BlobService | None = None) -> FileWithLink:
+    is_dict = isinstance(file_obj, dict)
+    file_id = file_obj.get("id") if is_dict else file_obj.id
+    blob_path = file_obj.get("blob_path") if is_dict else file_obj.blob_path
+
+    download_link = None
+    if blob_service and blob_path:
+        try:
+            download_link = blob_service.generate_sas_url(blob_path)
+        except Exception as exc:
+            logger.warning("Failed to generate download link for %s: %s", file_id, exc)
+
+    return FileWithLink(
+        id=file_id,
+        file_name=file_obj.get("file_name") if is_dict else file_obj.original_name,
+        application=file_obj.get("application") if is_dict else file_obj.application,
+        issue=file_obj.get("issue") if is_dict else file_obj.issue,
+        ingredient=file_obj.get("ingredient") if is_dict else file_obj.ingredient,
+        customer=file_obj.get("customer") if is_dict else file_obj.customer,
+        trial_id=file_obj.get("trial_id") if is_dict else file_obj.trial_id,
+        author=file_obj.get("author") if is_dict else file_obj.author,
+        status=file_obj.get("status") if is_dict else file_obj.status,
+        updated_at=file_obj.get("updated_at") if is_dict else getattr(file_obj, "updated_at", None),
+        download_link=download_link,
+    )
 
 
 @router.get("/dashboard", response_model=DashboardResponse)
@@ -51,56 +105,68 @@ def list_files(
 def search_files(
     q: str | None = Query(None, description="ファイル名での部分一致検索"),
     mine_only: bool = Query(False, description="自分のファイルのみ検索する場合はtrue"),
-    final_product: str | None = Query(None),
+    application: str | None = Query(None),
     issue: str | None = Query(None),
     ingredient: str | None = Query(None),
     customer: str | None = Query(None),
     trial_id: str | None = Query(None),
     author: str | None = Query(None),
+    status_filter: str | None = Query(None),
     sort_by: str = Query("updated_at_desc"),
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     db=Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    """ファイル検索 API"""
+    """ファイル検索 API（Step4でAzure Searchに置き換え予定）"""
     service = FileService(db)
     owner_id = current_user.id if mine_only else None
-    
+
     total_count, files = service.search(
         owner_id=owner_id,
         q=q,
-        final_product=final_product,
+        application=application,
         issue=issue,
         ingredient=ingredient,
         customer=customer,
         trial_id=trial_id,
         author=author,
+        status=status_filter,
         sort_by=sort_by,
         page=page,
         page_size=page_size,
     )
 
-    results: list[FileWithLink] = []
-    for f in files:
-        download_link = f.azure_blob_url  # 現状は保存済みURLをそのまま返す（本番ではSAS発行に差し替え可能）
-        results.append(
-            FileWithLink(
-                id=f.id,
-                file_name=f.original_filename,
-                final_product=f.final_product,
-                issue=f.issue,
-                ingredient=f.ingredient,
-                customer=f.customer,
-                trial_id=f.trial_id,
-                author=f.author,
-                status=f.status,
-                updated_at=getattr(f, "updated_at", None),
-                download_link=download_link,
-            )
-        )
-
+    blob_service = BlobService()
+    results = [_to_file_with_link(f, blob_service) for f in files]
     return FileSearchResponse(total_count=total_count, files=results)
+
+
+@router.post("/{file_id}/download", response_model=dict)
+def download_file(
+    file_id: str,
+    db=Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    ファイルのダウンロードリンクを取得し、ダウンロード履歴を記録する。
+    """
+    file_service = FileService(db)
+    # ファイル存在確認
+    file_obj = file_service.get(file_id)
+
+    # 履歴記録
+    file_service.record_download(file_id, current_user.id)
+
+    # SAS URL生成
+    blob_service = BlobService()
+    try:
+        sas_url = blob_service.generate_sas_url(file_obj.blob_path, expiry_minutes=60)
+    except Exception as e:
+        logger.error("Failed to generate SAS URL for %s: %s", file_id, e)
+        raise HTTPException(status_code=500, detail="Could not generate download URL")
+
+    return {"download_url": sas_url}
 
 
 @router.get("/{file_id}", response_model=FileWithLink)
@@ -117,20 +183,8 @@ def get_file_metadata(
     if file_obj.owner_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
-    download_link = file_obj.azure_blob_url
-    return FileWithLink(
-        id=file_obj.id,
-        file_name=file_obj.original_filename,
-        final_product=file_obj.final_product,
-        issue=file_obj.issue,
-        ingredient=file_obj.ingredient,
-        customer=file_obj.customer,
-        trial_id=file_obj.trial_id,
-        author=file_obj.author,
-        status=file_obj.status,
-        updated_at=getattr(file_obj, "updated_at", None),
-        download_link=download_link,
-    )
+    blob_service = BlobService()
+    return _to_file_with_link(file_obj, blob_service)
 
 
 @router.get("/{file_id}/preview-url", response_model=dict)
@@ -146,42 +200,31 @@ def get_preview_url(
     """
     file_service = FileService(db)
     file_obj = file_service.get(file_id)
-    
-    if file_obj.is_preview_hidden:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Preview is disabled for this file")
 
-    # 拡張子チェック
-    filename = file_obj.original_filename
+    filename = file_obj.original_name
     _, ext = os.path.splitext(filename)
     ext = ext.lower() if ext else ""
-    
-    # Blob ServiceでSAS URL生成
+
     blob_service = BlobService()
     try:
-        sas_url = blob_service.generate_sas_url(file_obj.blob_name, expiry_minutes=60)
+        sas_url = blob_service.generate_sas_url(file_obj.blob_path, expiry_minutes=60)
     except Exception as e:
-        logger.error(f"Failed to generate SAS URL for file {file_id}: {e}")
+        logger.error("Failed to generate SAS URL for %s: %s", file_id, e)
         raise HTTPException(status_code=500, detail="Could not generate preview URL")
-        
-    # ローカル環境(file://)の場合はOffice Online Viewerは使えないため、そのまま返す
+
     if sas_url.startswith("file://"):
         return {"preview_url": sas_url, "type": "local"}
-    
-    # URLエンコード (Office Online Viewerに渡すため)
+
     from urllib.parse import quote
+
     encoded_sas_url = quote(sas_url, safe="")
-    
+
     if ext in [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"]:
-        # Office Online Viewer
-        # srcパラメータにエンコードされたURLを渡す
         preview_url = f"https://view.officeapps.live.com/op/embed.aspx?src={encoded_sas_url}"
         return {"preview_url": preview_url, "type": "office"}
-    elif ext == ".pdf":
-        # PDFはブラウザで直接開けるのでSAS URLそのまま
+    if ext == ".pdf":
         return {"preview_url": sas_url, "type": "pdf"}
-    else:
-        # その他のファイルはプレビュー非対応（またはダウンロードさせる）
-        return {"preview_url": sas_url, "type": "other"}
+    return {"preview_url": sas_url, "type": "other"}
 
 
 @router.post("/{file_id}/reference", response_model=ReferenceRead)
@@ -203,59 +246,84 @@ def create_reference(
 @router.post("/", response_model=FileRead, status_code=201)
 async def upload_file(
     uploaded_file: UploadFile = FastAPIFile(...),
-    final_product: str = Form(...),
-    issue: str = Form(...),
-    ingredient: str = Form(...),
-    customer: str = Form(...),
-    trial_id: str = Form(...),
-    author: str | None = Form(None),
-    file_extension: str | None = Form(None),
     file_status: str = Form("active"),
-    is_preview_hidden: bool = Form(False),
+    application: str | None = Form(None),
+    issue: str | None = Form(None),
+    ingredient: str | None = Form(None),
+    customer: str | None = Form(None),
+    trial_id: str | None = Form(None),
+    author: str | None = Form(None),
     db=Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    try:
-        data = await uploaded_file.read()
-        logger.info(f"Uploading file: {uploaded_file.filename}, size: {len(data)} bytes")
+    if not uploaded_file.filename:
+        raise HTTPException(status_code=400, detail="Filename is required.")
 
-        # ファイル拡張子が指定されていない場合は、元のファイル名から抽出
-        if not file_extension:
-            _, ext = os.path.splitext(uploaded_file.filename)
-            file_extension = ext.lstrip(".") if ext else ""
+    data = await uploaded_file.read()
+    logger.info("Uploading file: %s (%d bytes)", uploaded_file.filename, len(data))
 
-        blob_service = BlobService()
-        blob_name, blob_url = blob_service.upload_bytes(
-            data,
-            uploaded_file.filename,
-            uploaded_file.content_type,
-        )
+    file_id = str(uuid4())
+    original_name = uploaded_file.filename
+    _, ext = os.path.splitext(original_name)
+    extension = ext.lstrip(".")
+    blob_name = f"{file_id}.{extension}" if extension else file_id
+
+    metadata = {
+        "original_name": original_name,
+        "status": file_status,
+        "file_id": file_id,
+        "application": application,
+        "issue": issue,
+        "ingredient": ingredient,
+        "customer": customer,
+        "trial_id": trial_id,
+        "author": author,
+    }
+    
+    if current_user and getattr(current_user, "id", None):
+        metadata["owner_id"] = str(current_user.id)
+
+    async with BlobService() as blob_service:
+        try:
+            blob_path, _ = await blob_service.upload_blob(
+                blob_name,
+                data,
+                content_type=uploaded_file.content_type,
+                metadata=metadata,
+            )
+        except Exception as exc:
+            logger.exception("Failed to upload blob")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Blob upload failed: {exc}",
+            ) from exc
 
         file_service = FileService(db)
         payload = FileCreate(
-            owner_id=current_user.id,
-            original_filename=uploaded_file.filename,
-            content_type=uploaded_file.content_type,
-            file_size=len(data),
-            final_product=final_product,
+            id=file_id,
+            blob_path=blob_path,
+            original_name=original_name,
+            application=application,
             issue=issue,
             ingredient=ingredient,
             customer=customer,
             trial_id=trial_id,
             author=author,
-            file_extension=file_extension,
             status=file_status,
-            is_preview_hidden=is_preview_hidden,
+            owner_id=current_user.id,
         )
-        return file_service.create(payload, blob_name=blob_name, blob_url=blob_url)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("Error during file upload")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"File upload failed: {str(e)}",
-        )
+
+        try:
+            record = file_service.create(payload)
+        except Exception as exc:
+            await blob_service.delete_blob(blob_path)
+            logger.exception("Failed to create DB record, blob deleted")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to persist file metadata.",
+            ) from exc
+
+    return record
 
 
 @router.put("/{file_id}")
@@ -277,7 +345,7 @@ def update_file_metadata(
 
 
 @router.delete("/{file_id}", status_code=204)
-def delete_file(
+async def delete_file(
     file_id: str,
     db=Depends(get_db_session),
     current_user: User = Depends(get_current_user),
@@ -287,6 +355,6 @@ def delete_file(
     if file_obj.owner_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
-    blob_service = BlobService()
-    blob_service.delete_blob(file_obj.blob_name)
+    async with BlobService() as blob_service:
+        await blob_service.delete_blob(file_obj.blob_path)
     file_service.delete(file_id)

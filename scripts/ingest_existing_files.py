@@ -1,6 +1,8 @@
-"""Utility script to ingest metadata for files that already exist in Blob Storage."""
+"""Utility script to backfill SQL metadata for existing Blob objects."""
 
+import argparse
 from typing import Optional
+from uuid import uuid4
 
 from azure.storage.blob import BlobServiceClient
 
@@ -9,7 +11,6 @@ from app.db.session import SessionLocal
 from app.schemas.file import FileCreate
 from app.services.file_service import FileService
 from scripts.utils.filename_parser import extract_metadata
-
 
 settings = get_settings()
 
@@ -24,22 +25,24 @@ def ingest(owner_id: int, container: Optional[str] = None) -> None:
         for blob in container_client.list_blobs():
             meta = extract_metadata(blob.name)
             payload = FileCreate(
+                id=str(uuid4()),
+                blob_path=f"{container_name}/{blob.name}",
+                original_name=meta.original_filename,
+                application=meta.application,
+                issue=meta.issue,
+                ingredient=meta.ingredient,
+                customer=meta.customer,
+                trial_id=meta.trial_id,
+                author=meta.author,
+                status="active",
                 owner_id=owner_id,
-                original_filename=meta.original_filename,
-                content_type=blob.content_settings.content_type if blob.content_settings else None,
-                file_size=blob.size,
-                blob_name=blob.name,
             )
-            blob_url = f"{container_client.url}/{blob.name}"
-            file_service.create(payload, blob_name=blob.name, blob_url=blob_url)
+            file_service.create(payload)
     finally:
         db.close()
 
 
 if __name__ == "__main__":
-    # Example usage: adapt to CLI as needed
-    import argparse
-
     parser = argparse.ArgumentParser(description="Ingest blob metadata into SQL DB.")
     parser.add_argument("--owner-id", type=int, required=True)
     parser.add_argument("--container", type=str, default=None)

@@ -70,10 +70,10 @@ class Settings(BaseSettings):
     local_storage_path: str = Field(default="uploads")  # 開発環境用のローカルストレージパス
 
     # Azure AI Search
-    search_backend: str = Field(default="sql")  # "sql" or "azure"
+    search_backend: str = Field(default="azure")  # 固定でAzure Searchを利用
     azure_search_endpoint: str = ""
     azure_search_api_key: str = ""
-    azure_search_index_name: str = "files-index"
+    azure_search_index_name: str = "neura-files-v2"
 
 
 

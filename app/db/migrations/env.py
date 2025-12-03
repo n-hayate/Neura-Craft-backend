@@ -15,6 +15,7 @@ from app.db.base import Base
 from app.db.models.user import User
 from app.db.models.file import File
 from app.db.models.file_reference import FileReference
+from app.db.models.file_download import FileDownload
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
