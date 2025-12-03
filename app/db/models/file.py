@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Unicode, func, Boolean
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Unicode, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -14,31 +14,31 @@ class File(Base):
         String(36),
         primary_key=True,
         default=lambda: str(uuid4()),
+        index=True,
     )
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
-    original_filename: Mapped[str] = mapped_column(Unicode(255), nullable=False)
-    blob_name: Mapped[str] = mapped_column(Unicode(512), nullable=False, unique=True)
-    content_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    azure_blob_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    
-    # メタデータフィールド
-    final_product: Mapped[str] = mapped_column(Unicode(255), nullable=False, index=True)
-    issue: Mapped[str] = mapped_column(Unicode(255), nullable=False, index=True)
-    ingredient: Mapped[str] = mapped_column(Unicode(255), nullable=False, index=True)
-    customer: Mapped[str] = mapped_column(Unicode(255), nullable=False, index=True)
-    trial_id: Mapped[str] = mapped_column(Unicode(50), nullable=False, index=True)
-    author: Mapped[str | None] = mapped_column(Unicode(255), nullable=True, index=True)
-    file_extension: Mapped[str] = mapped_column(String(10), nullable=False)
-    download_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), 
-        server_default=func.now(), 
-        onupdate=func.now(),
-        index=True
-    )
+    blob_path: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
+    original_name: Mapped[str] = mapped_column(Unicode(255), nullable=False)
+
+    application: Mapped[str | None] = mapped_column(Unicode(255), nullable=True)
+    issue: Mapped[str | None] = mapped_column(Unicode(255), nullable=True)
+    ingredient: Mapped[str | None] = mapped_column(Unicode(255), nullable=True)
+    customer: Mapped[str | None] = mapped_column(Unicode(255), nullable=True)
+    trial_id: Mapped[str | None] = mapped_column(Unicode(255), nullable=True)
+    author: Mapped[str | None] = mapped_column(Unicode(255), nullable=True)
+
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="active")
-    is_preview_hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
 
     owner = relationship("User", backref="files")

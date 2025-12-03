@@ -53,8 +53,15 @@ class DashboardService:
             File.created_at >= last_month
         ).scalar()
 
-        usage_ranking = self._get_ranking(File.final_product)
+        usage_ranking = self._get_ranking(File.application)
         ingredient_ranking = self._get_ranking(File.ingredient)
+        download_ranking = self._get_download_ranking()
+        
+        # 総ダウンロード数（直近1ヶ月）
+        from app.db.models.file_download import FileDownload
+        total_downloads_last_month = self.db.query(func.count(FileDownload.id)).filter(
+            FileDownload.downloaded_at >= last_month
+        ).scalar() or 0
         
         word_cloud = self._generate_word_cloud()
 
@@ -63,6 +70,8 @@ class DashboardService:
             "new_files_last_month": new_files,
             "usage_ranking": usage_ranking,
             "ingredient_ranking": ingredient_ranking,
+            "download_ranking": download_ranking,
+            "total_downloads_last_month": total_downloads_last_month,
             "issue_word_cloud": word_cloud
         }
 
@@ -74,9 +83,25 @@ class DashboardService:
     def _get_ranking(self, column, limit: int = 5) -> list[dict]:
         results = (
             self.db.query(column, func.count(column).label('count'))
-            .filter(File.status == 'active')
+            .filter(File.status == 'active', column.isnot(None))
             .group_by(column)
             .order_by(func.count(column).desc())
+            .limit(limit)
+            .all()
+        )
+        return [{"name": r[0], "count": r[1]} for r in results]
+
+    def _get_download_ranking(self, limit: int = 5) -> list[dict]:
+        from app.db.models.file_download import FileDownload
+        
+        last_month = datetime.now() - timedelta(days=30)
+        
+        results = (
+            self.db.query(File.original_name, func.count(FileDownload.id).label('count'))
+            .join(FileDownload, File.id == FileDownload.file_id)
+            .filter(FileDownload.downloaded_at >= last_month)
+            .group_by(File.id, File.original_name)
+            .order_by(func.count(FileDownload.id).desc())
             .limit(limit)
             .all()
         )

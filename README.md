@@ -41,21 +41,24 @@ python scripts/seed_data.py
 
 ## 環境変数
 
-| 変数                              | 説明                                      |
-| --------------------------------- | ----------------------------------------- |
-| `APP_ENV`                         | `development` / `production` などの環境名 |
-| `SECRET_KEY`                      | JWT 署名キー                              |
-| `ACCESS_TOKEN_EXPIRE_MINUTES`     | アクセストークン有効期限                  |
-| `SQLALCHEMY_DATABASE_URI`         | DB 接続文字列（開発では SQLite でも可）   |
-| `AZURE_STORAGE_ACCOUNT_NAME`      | ストレージアカウント名                    |
-| `AZURE_STORAGE_CONNECTION_STRING` | Blob 接続文字列                           |
-| `AZURE_BLOB_FILES_CONTAINER`      | ファイル格納コンテナ                      |
-| `AZURE_BLOB_THUMBNAILS_CONTAINER` | サムネイル格納コンテナ                    |
-| `LOCAL_STORAGE_PATH`              | 開発時にファイルを保存するローカルパス    |
-| `SEARCH_BACKEND`                  | 検索エンジン (`azure` or `sql`)           |
-| `AZURE_SEARCH_ENDPOINT`           | Azure AI Search エンドポイント URL        |
-| `AZURE_SEARCH_API_KEY`            | Azure AI Search API キー (Admin Key)      |
-| `AZURE_SEARCH_INDEX_NAME`         | インデックス名 (例: `files-index`)        |
+| 変数                              | 説明                                                   |
+| --------------------------------- | ------------------------------------------------------ |
+| `APP_ENV`                         | `development` / `production` などの環境名              |
+| `SECRET_KEY`                      | JWT 署名キー                                           |
+| `ACCESS_TOKEN_EXPIRE_MINUTES`     | アクセストークン有効期限                               |
+| `SQLALCHEMY_DATABASE_URI`         | DB 接続文字列（開発では SQLite でも可）                |
+| `AZURE_STORAGE_ACCOUNT_NAME`      | ストレージアカウント名                                 |
+| `AZURE_STORAGE_CONNECTION_STRING` | Blob 接続文字列                                        |
+| `AZURE_BLOB_FILES_CONTAINER`      | ファイル格納コンテナ                                   |
+| `AZURE_BLOB_THUMBNAILS_CONTAINER` | サムネイル格納コンテナ                                 |
+| `LOCAL_STORAGE_PATH`              | 開発時にファイルを保存するローカルパス                 |
+| `SEARCH_BACKEND`                  | 検索エンジン (`azure` or `sql`) ※現状は `azure` を推奨 |
+| `AZURE_SEARCH_ENDPOINT`           | Azure AI Search エンドポイント URL                     |
+| `AZURE_SEARCH_API_KEY`            | Azure AI Search クエリキー                             |
+| `AZURE_SEARCH_ADMIN_KEY`          | Azure AI Search Admin キー（セットアップ用）           |
+| `AZURE_SEARCH_INDEX_NAME`         | インデックス名 (例: `neura-files-v2`)                  |
+| `AZURE_SEARCH_DATASOURCE_NAME`    | データソース名 (例: `neura-files-ds`)                  |
+| `AZURE_SEARCH_INDEXER_NAME`       | インデクサー名 (例: `neura-files-idx`)                 |
 
 ### ストレージ設定（ローカル / Azure）
 
@@ -71,11 +74,11 @@ python scripts/seed_data.py
   - `AZURE_STORAGE_CONNECTION_STRING` に実際の接続文字列を設定
   - `AZURE_BLOB_FILES_CONTAINER` に利用するコンテナ名を設定（例: `files`）
   - `AZURE_BLOB_THUMBNAILS_CONTAINER` にサムネイル用コンテナ名を設定（例: `thumbnails`）
-  - 以降のファイルアップロードは Azure Blob Storage に保存され、DB には Blob の URL が格納される
+- 以降のファイルアップロードは Azure Blob Storage に保存され、DB には Blob のパス（例: `files/<UUID>.ext`）が保存される
 
 ## Azure AI Search の設定
 
-本プロジェクトでは、検索エンジンとして **Azure AI Search** を推奨しています。
+本プロジェクトでは、検索エンジンとして **Azure AI Search** を採用しています（SQL LIKE 検索は廃止済み）。
 
 ### 有効化手順
 
@@ -84,16 +87,27 @@ python scripts/seed_data.py
    ```bash
    SEARCH_BACKEND=azure
    AZURE_SEARCH_ENDPOINT=https://<your-service-name>.search.windows.net
-   AZURE_SEARCH_API_KEY=<admin-key>
-   AZURE_SEARCH_INDEX_NAME=files-index
+   AZURE_SEARCH_API_KEY=<query-key>
+   AZURE_SEARCH_INDEX_NAME=neura-files-v2
+   AZURE_SEARCH_DATASOURCE_NAME=neura-files-ds
+   AZURE_SEARCH_INDEXER_NAME=neura-files-idx
    ```
-3. 既存データがある場合、以下のスクリプトを実行してインデックスを作成・データ登録する。
+3. 初回セットアップ時は、Admin Key を使ってインデックス/データソース/インデクサーを作成する。
+   ```bash
+   export AZURE_SEARCH_ADMIN_KEY=<admin-key>
+   # (.env に AZURE_SEARCH_ADMIN_KEY を設定済みなら export 不要)
+   python infrastructure/search_setup.py
+   ```
+4. DB マイグレーションを実行する（日本語対応カラムへの変更等）。
+   ```bash
+   alembic upgrade head
+   ```
+5. 既存データや Blob メタデータを再クロールしたい場合は、インデクサーを手動起動する（または Portal から実行）。
    ```bash
    python scripts/reindex_search.py
    ```
 
-※ `SEARCH_BACKEND=sql` (または未設定) の場合、従来の SQL `LIKE` 検索が動作します。
-※ Azure Search の設定が正しくない場合や接続エラー時は、自動的に SQL 検索にフォールバックします。
+※ Admin Key はセットアップ時のみ使用し、アプリケーションからのクエリには `AZURE_SEARCH_API_KEY`（クエリキー）を利用してください。
 
 ## ディレクトリ構成
 
@@ -130,21 +144,22 @@ OpenAPI JSON: `http://localhost:8000/openapi.json`
 
 ### `POST /api/v1/files`（ファイルアップロード）
 
-ファイルとメタデータをアップロードするエンドポイントです。`multipart/form-data`形式で送信してください。
+ファイルをアップロードすると、指定されたメタデータとともに Azure Blob Storage に保存します。`multipart/form-data`形式で送信してください。
 
 #### リクエストパラメータ（FormData）
 
-| フィールド名     | 型     | 必須 | 説明                                  | 備考                                   |
-| ---------------- | ------ | ---- | ------------------------------------- | -------------------------------------- |
-| `file`           | File   | 必須 | アップロードするファイル              | ファイルオブジェクト                   |
-| `final_product`  | string | 必須 | 最終製品名                            | 検索キーとして使用                     |
-| `issue`          | string | 必須 | 課題感                                | 検索キーとして使用                     |
-| `ingredient`     | string | 必須 | 使用原料                              | 検索キーとして使用                     |
-| `customer`       | string | 必須 | 提案企業                              | 検索キーとして使用                     |
-| `trial_id`       | string | 必須 | 試作 ID                               | 検索キーとして使用（4 桁の英数字推奨） |
-| `author`         | string | 任意 | 開発担当者名                          | `null` を送信可能                      |
-| `file_extension` | string | 任意 | ファイルの拡張子（例: 'xlsx', 'pdf'） | 未指定時はファイル名から自動抽出       |
-| `status`         | string | 任意 | ファイルの状態                        | デフォルト: `"active"`                 |
+| フィールド名  | 型     | 必須 | 説明                                 | 備考                                   |
+| ------------- | ------ | ---- | ------------------------------------ | -------------------------------------- |
+| `file`        | File   | 必須 | アップロードするファイル             | `application/pdf` など任意の形式に対応 |
+| `file_status` | string | 任意 | ファイルの状態 (`active`/`archived`) | 指定しない場合は `active`              |
+| `application` | string | 任意 | アプリケーション名                   |                                        |
+| `issue`       | string | 任意 | 課題                                 |                                        |
+| `ingredient`  | string | 任意 | 材料                                 |                                        |
+| `customer`    | string | 任意 | 顧客                                 |                                        |
+| `trial_id`    | string | 任意 | 試作 ID                              |                                        |
+| `author`      | string | 任意 | 担当者                               |                                        |
+
+フォームパラメータで指定されたメタデータが優先されます。指定がない場合は `null` となります。
 
 #### レスポンス
 
@@ -154,21 +169,17 @@ OpenAPI JSON: `http://localhost:8000/openapi.json`
 {
   "id": "uuid-string",
   "owner_id": 1,
-  "original_filename": "example.xlsx",
-  "blob_name": "uuid-filename",
-  "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "file_size": 12345,
-  "azure_blob_url": "https://...",
+  "original_name": "example.xlsx",
+  "blob_path": "files/uuid-string.xlsx",
+  "application": "アプリケーション",
+  "issue": "課題",
+  "ingredient": "材料",
+  "customer": "顧客",
+  "trial_id": "試作ID",
+  "author": "担当者",
+  "status": "active",
   "created_at": "2025-01-20T12:00:00Z",
-  "final_product": "最終製品名",
-  "issue": "課題感",
-  "ingredient": "使用原料",
-  "customer": "提案企業",
-  "trial_id": "0001",
-  "author": "開発担当者名",
-  "file_extension": "xlsx",
-  "updated_at": "2025-01-20T12:00:00Z",
-  "status": "active"
+  "updated_at": "2025-01-20T12:00:00Z"
 }
 ```
 
@@ -177,14 +188,9 @@ OpenAPI JSON: `http://localhost:8000/openapi.json`
 ```javascript
 const formData = new FormData();
 formData.append("file", fileInput.files[0]);
-formData.append("final_product", "最終製品名");
-formData.append("issue", "課題感");
-formData.append("ingredient", "使用原料");
-formData.append("customer", "提案企業");
-formData.append("trial_id", "0001");
-formData.append("author", "開発担当者名"); // 任意
-formData.append("file_extension", "xlsx"); // 任意（自動抽出可）
-formData.append("status", "active"); // 任意（デフォルト: active）
+formData.append("file_status", "active");
+formData.append("application", "Cake");
+formData.append("issue", "Sweetness");
 
 const response = await fetch("http://localhost:8000/api/v1/files", {
   method: "POST",
@@ -197,16 +203,6 @@ const response = await fetch("http://localhost:8000/api/v1/files", {
 const result = await response.json();
 ```
 
-#### ファイル命名規則について
-
-ファイル名の命名規則は以下の通りです（ただし、この規則に従っていなくてもアップロード可能です）:
-
-```
-最終製品_課題感_使用原料_提案企業_試作ID.xlsx
-```
-
-フロントエンドでは、この命名規則に基づいてファイル名を解析するのではなく、上記のメタデータフィールドを個別に入力・送信してください。
-
 ---
 
 ### `GET /api/v1/files/search`（ファイル検索）
@@ -216,32 +212,32 @@ const result = await response.json();
 
 #### クエリパラメータ
 
-| パラメータ名    | 型     | 必須 | 説明                                                                                              |
-| --------------- | ------ | ---- | ------------------------------------------------------------------------------------------------- |
-| `q`             | string | 任意 | ファイル名および全メタデータ（課題、原料等）の部分一致・横断検索（スペース区切りで AND 検索対応） |
-| `final_product` | string | 任意 | 最終製品名での部分一致（スペース区切りで AND 検索対応）                                           |
-| `issue`         | string | 任意 | 課題感での部分一致（スペース区切りで AND 検索対応）                                               |
-| `ingredient`    | string | 任意 | 使用原料での部分一致（スペース区切りで AND 検索対応）                                             |
-| `customer`      | string | 任意 | 提案企業での部分一致（スペース区切りで AND 検索対応）                                             |
-| `trial_id`      | string | 任意 | 試作 ID での部分一致                                                                              |
-| `author`        | string | 任意 | 開発担当者名での部分一致                                                                          |
-| `sort_by`       | string | 任意 | ソートキー（例: `updated_at_desc`）                                                               |
-| `page`          | int    | 任意 | ページ番号（1 始まり、デフォルト 1）                                                              |
-| `page_size`     | int    | 任意 | 1 ページあたり件数（デフォルト 10, 最大 100）                                                     |
+| パラメータ名  | 型     | 必須 | 説明                                                                                 |
+| ------------- | ------ | ---- | ------------------------------------------------------------------------------------ |
+| `q`           | string | 任意 | `content,application,customer,trial_id,ingredient,author` に対する全文検索キーワード |
+| `application` | string | 任意 | アプリケーション名（完全一致フィルタ）                                               |
+| `issue`       | string | 任意 | 課題（完全一致フィルタ）                                                             |
+| `ingredient`  | string | 任意 | 材料（完全一致フィルタ）                                                             |
+| `customer`    | string | 任意 | 顧客（完全一致フィルタ）                                                             |
+| `trial_id`    | string | 任意 | 試作 ID（完全一致フィルタ）                                                          |
+| `author`      | string | 任意 | 担当者（完全一致フィルタ）                                                           |
+| `status`      | string | 任意 | ステータス（デフォルト `active`）                                                    |
+| `mine_only`   | bool   | 任意 | `true` の場合は自分がアップロードしたファイルのみ                                    |
+| `sort_by`     | string | 任意 | ソートキー（例: `updated_at_desc`）                                                  |
+| `page`        | int    | 任意 | ページ番号（1 始まり、デフォルト 1）                                                 |
+| `page_size`   | int    | 任意 | 1 ページあたり件数（デフォルト 10, 最大 100）                                        |
 
 **検索ロジックについて:**
 
-- `q` パラメータは、ファイル名だけでなく、メタデータ（製品名、課題、原料、顧客名、試作 ID、作成者）も対象に検索します。
-- スペース区切りで複数のキーワードを指定した場合、**AND 検索**となります（すべてのキーワードを含むレコードがヒット）。
-  - 例: `q="塩味 改善"` → 「塩味」と「改善」の両方が（ファイル名またはメタデータのどこかに）含まれるファイルを検索。
-- 各絞り込みフィールド（`issue` など）も同様にスペース区切りで AND 検索が可能です。
+- Azure AI Search を利用し、`content` フィールド（Blob から抽出された本文）を含む全文検索を行います。
+- フィルタ項目は完全一致です。入力が複数語の場合はそのまま 1 語の扱いになります。
+- `mine_only=true` の場合、Blob メタデータに埋め込まれた `owner_id` でフィルタリングします。
+- ソートは `updated_at` または `created_at` を指定できます。
 
 サポートされる `sort_by` の例:
 
 - `updated_at_desc`（更新日時 新しい順, デフォルト）
 - `updated_at_asc`
-- `final_product_asc`
-- `final_product_desc`
 - `created_at_desc`
 - `created_at_asc`
 
@@ -253,16 +249,16 @@ const result = await response.json();
   "files": [
     {
       "id": "uuid-string",
-      "file_name": "example.xlsx",
-      "final_product": "最終製品名",
-      "issue": "課題感",
-      "ingredient": "使用原料",
-      "customer": "提案企業",
+      "file_name": "アプリケーション_課題_...xlsx",
+      "application": "アプリケーション",
+      "issue": "課題",
+      "ingredient": "材料",
+      "customer": "顧客",
       "trial_id": "0001",
-      "author": "開発担当者名",
+      "author": "担当者",
       "status": "active",
       "updated_at": "2025-01-20T12:00:00Z",
-      "download_link": "https://..." // Blob への URL（開発環境では file:// パス）
+      "download_link": "https://...SAS..." // Blob への一時URL（ローカルの場合は file:// パス）
     }
   ]
 }
@@ -290,13 +286,13 @@ const result = await response.json();
 ```json
 {
   "id": "uuid-string",
-  "file_name": "example.xlsx",
-  "final_product": "最終製品名",
-  "issue": "課題感",
-  "ingredient": "使用原料",
-  "customer": "提案企業",
+  "file_name": "アプリケーション_課題_...xlsx",
+  "application": "アプリケーション",
+  "issue": "課題",
+  "ingredient": "材料",
+  "customer": "顧客",
   "trial_id": "0001",
-  "author": "開発担当者名",
+  "author": "担当者",
   "status": "active",
   "updated_at": "2025-01-20T12:00:00Z",
   "download_link": "https://..."
@@ -361,10 +357,10 @@ const result = await response.json();
 
 ```json
 {
-  "final_product": "新しい最終製品名",
+  "application": "新アプリケーション",
   "issue": "新しい課題感",
   "ingredient": "新しい使用原料",
-  "customer": "新しい提案企業",
+  "customer": "新しい顧客",
   "trial_id": "0002",
   "author": "別の担当者",
   "status": "inactive"
@@ -386,9 +382,9 @@ const result = await response.json();
 
 ---
 
-### `POST /api/v1/files/{file_id}/download`（ダウンロード URL 取得 & カウント）
+### `POST /api/v1/files/{file_id}/download`（ダウンロード URL 取得 & 履歴記録）
 
-ファイルをダウンロードするための URL を取得し、ダウンロード回数をカウントアップします。
+ファイルをダウンロードするための URL を取得し、ダウンロード履歴（日時・ユーザー）を記録します。  
 フロントエンドでは、この API から返された URL を使用してブラウザでダウンロードを開始させてください。
 
 #### パスパラメータ
@@ -463,7 +459,12 @@ const result = await response.json();
     "改善": 15,
     "コスト": 10,
     "風味": 8
-  }
+  },
+  "total_downloads_last_month": 10,
+  "download_ranking": [
+    { "name": "PopularFile.xlsx", "count": 5 },
+    { "name": "DocB.docx", "count": 3 }
+  ]
 }
 ```
 
