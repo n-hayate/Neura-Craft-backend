@@ -1,6 +1,6 @@
 from datetime import datetime
 from uuid import UUID, uuid4
-
+from typing import Optional
 from pydantic import BaseModel
 
 
@@ -48,6 +48,8 @@ class FileWithLink(BaseModel):
 
     id: str  # UUID or Base64 key
     file_name: str
+    original_name: Optional[str] = None
+    display_name: str
     application: str | None = None
     issue: str | None = None
     ingredient: str | None = None

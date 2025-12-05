@@ -50,22 +50,33 @@ def _extract_metadata_from_filename(filename: str) -> dict[str, str | None]:
             
     return values
 
-
 def _to_file_with_link(file_obj, blob_service: BlobService | None = None) -> FileWithLink:
     is_dict = isinstance(file_obj, dict)
+
+    # 共通の取り出し
     file_id = file_obj.get("id") if is_dict else file_obj.id
     blob_path = file_obj.get("blob_path") if is_dict else file_obj.blob_path
 
+    # オリジナル名を取得（検索結果 or DB どちらからでも）
+    original_name = file_obj.get("original_name") if is_dict else getattr(file_obj, "original_name", None)
+    file_name = file_obj.get("file_name") if is_dict else getattr(file_obj, "file_name", None)
+
+    # 表示用
+    display_name = original_name or file_name or file_id
+
+    # SAS
     download_link = None
     if blob_service and blob_path:
         try:
-            download_link = blob_service.generate_sas_url(blob_path)
+            download_link = blob_service.generate_sas_url(blob_path, download_filename=display_name)
         except Exception as exc:
             logger.warning("Failed to generate download link for %s: %s", file_id, exc)
 
     return FileWithLink(
         id=file_id,
-        file_name=file_obj.get("file_name") if is_dict else file_obj.original_name,
+        file_name=file_name,              # 物理ファイル名
+        original_name=original_name,      # 追加 ← ★最重要★
+        display_name=display_name,        # UI が使う名前
         application=file_obj.get("application") if is_dict else file_obj.application,
         issue=file_obj.get("issue") if is_dict else file_obj.issue,
         ingredient=file_obj.get("ingredient") if is_dict else file_obj.ingredient,
@@ -78,6 +89,35 @@ def _to_file_with_link(file_obj, blob_service: BlobService | None = None) -> Fil
         download_link=download_link,
         download_count=file_obj.get("download_count", 0) if is_dict else 0,
     )
+
+
+# def _to_file_with_link(file_obj, blob_service: BlobService | None = None) -> FileWithLink:
+#     is_dict = isinstance(file_obj, dict)
+#     file_id = file_obj.get("id") if is_dict else file_obj.id
+#     blob_path = file_obj.get("blob_path") if is_dict else file_obj.blob_path
+
+#     download_link = None
+#     if blob_service and blob_path:
+#         try:
+#             download_link = blob_service.generate_sas_url(blob_path)
+#         except Exception as exc:
+#             logger.warning("Failed to generate download link for %s: %s", file_id, exc)
+
+#     return FileWithLink(
+#         id=file_id,
+#         file_name=file_obj.get("file_name") if is_dict else file_obj.original_name,
+#         application=file_obj.get("application") if is_dict else file_obj.application,
+#         issue=file_obj.get("issue") if is_dict else file_obj.issue,
+#         ingredient=file_obj.get("ingredient") if is_dict else file_obj.ingredient,
+#         customer=file_obj.get("customer") if is_dict else file_obj.customer,
+#         trial_id=file_obj.get("trial_id") if is_dict else file_obj.trial_id,
+#         author=file_obj.get("author") if is_dict else file_obj.author,
+#         status=file_obj.get("status") if is_dict else file_obj.status,
+#         is_preview_hidden=file_obj.get("is_preview_hidden", False) if is_dict else file_obj.is_preview_hidden,
+#         updated_at=file_obj.get("updated_at") if is_dict else getattr(file_obj, "updated_at", None),
+#         download_link=download_link,
+#         download_count=file_obj.get("download_count", 0) if is_dict else 0,
+#     )
 
 
 @router.get("/dashboard", response_model=DashboardResponse)
@@ -162,11 +202,12 @@ def download_file(
 
     # SAS URL生成（ダウンロードファイル名を指定）
     blob_service = BlobService()
+    name = file_obj.original_name
     try:
         sas_url = blob_service.generate_sas_url(
             file_obj.blob_path,
             expiry_minutes=60,
-            download_filename=file_obj.original_name,  # ← 追加
+            download_filename=name,
         )
     except Exception as e:
         logger.error("Failed to generate SAS URL for %s: %s", file_id, e)
