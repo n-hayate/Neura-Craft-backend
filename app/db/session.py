@@ -1,9 +1,12 @@
+import logging
 from collections.abc import Generator
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 settings = get_settings()
@@ -21,11 +24,15 @@ SessionLocal = sessionmaker(
 
 
 def get_db() -> Generator[Session, None, None]:
-    db = SessionLocal()
     try:
-        yield db
-    finally:
-        db.close()
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Database connection error: {e}", exc_info=True)
+        raise
 
 
 __all__ = ["engine", "SessionLocal", "get_db"]

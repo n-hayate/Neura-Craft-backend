@@ -78,7 +78,7 @@ class FileService:
         if not self.search_service.is_enabled():
             raise RuntimeError("Azure Search is not configured.")
 
-        return self.search_service.search(
+        total_count, files = self.search_service.search(
             query=q,
             application=application,
             issue=issue,
@@ -92,6 +92,36 @@ class FileService:
             page=page,
             page_size=page_size,
         )
+
+        # 検索結果にダウンロード数を付与（DBから集計）
+        if files:
+            file_ids = [f.get("id") for f in files if f.get("id")]
+            if file_ids:
+                from sqlalchemy import func
+                from app.db.models.file_download import FileDownload
+
+                counts = (
+                    self.db.query(FileDownload.file_id, func.count(FileDownload.id))
+                    .filter(FileDownload.file_id.in_(file_ids))
+                    .group_by(FileDownload.file_id)
+                    .all()
+                )
+                count_map = {str(c[0]): c[1] for c in counts}
+
+                # プレビュー不可フラグを取得
+                preview_flags = (
+                    self.db.query(File.id, File.is_preview_hidden)
+                    .filter(File.id.in_(file_ids))
+                    .all()
+                )
+                preview_map = {str(r[0]): r[1] for r in preview_flags}
+
+                for f in files:
+                    fid = f.get("id")
+                    f["download_count"] = count_map.get(fid, 0)
+                    f["is_preview_hidden"] = preview_map.get(fid, False)
+
+        return total_count, files
 
     def update_metadata(self, file_id: str, payload: FileMetadataUpdate) -> File:
         """メタデータの部分更新"""

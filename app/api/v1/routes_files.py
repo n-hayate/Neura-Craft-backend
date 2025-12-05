@@ -73,8 +73,10 @@ def _to_file_with_link(file_obj, blob_service: BlobService | None = None) -> Fil
         trial_id=file_obj.get("trial_id") if is_dict else file_obj.trial_id,
         author=file_obj.get("author") if is_dict else file_obj.author,
         status=file_obj.get("status") if is_dict else file_obj.status,
+        is_preview_hidden=file_obj.get("is_preview_hidden", False) if is_dict else file_obj.is_preview_hidden,
         updated_at=file_obj.get("updated_at") if is_dict else getattr(file_obj, "updated_at", None),
         download_link=download_link,
+        download_count=file_obj.get("download_count", 0) if is_dict else 0,
     )
 
 
@@ -158,10 +160,14 @@ def download_file(
     # 履歴記録
     file_service.record_download(file_id, current_user.id)
 
-    # SAS URL生成
+    # SAS URL生成（ダウンロードファイル名を指定）
     blob_service = BlobService()
     try:
-        sas_url = blob_service.generate_sas_url(file_obj.blob_path, expiry_minutes=60)
+        sas_url = blob_service.generate_sas_url(
+            file_obj.blob_path,
+            expiry_minutes=60,
+            download_filename=file_obj.original_name,  # ← 追加
+        )
     except Exception as e:
         logger.error("Failed to generate SAS URL for %s: %s", file_id, e)
         raise HTTPException(status_code=500, detail="Could not generate download URL")
@@ -200,6 +206,12 @@ def get_preview_url(
     """
     file_service = FileService(db)
     file_obj = file_service.get(file_id)
+
+    if file_obj.is_preview_hidden:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Preview is not available for this file.",
+        )
 
     filename = file_obj.original_name
     _, ext = os.path.splitext(filename)
@@ -253,6 +265,7 @@ async def upload_file(
     customer: str | None = Form(None),
     trial_id: str | None = Form(None),
     author: str | None = Form(None),
+    is_preview_hidden: bool = Form(False),
     db=Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -310,6 +323,7 @@ async def upload_file(
             trial_id=trial_id,
             author=author,
             status=file_status,
+            is_preview_hidden=is_preview_hidden,
             owner_id=current_user.id,
         )
 

@@ -12,7 +12,7 @@ settings = get_settings()
 
 
 class SearchService:
-    SEARCH_FIELDS = ["content", "application", "customer", "trial_id", "ingredient", "author"]
+    SEARCH_FIELDS = ["content", "original_name", "application", "customer", "trial_id", "ingredient", "author"]
 
     def __init__(self) -> None:
         endpoint = settings.azure_search_endpoint
@@ -103,10 +103,14 @@ class SearchService:
 
         files: List[Dict[str, Any]] = []
         for doc in results:
+            display_name = doc.get("original_name") or doc.get("file_name")
+
             files.append(
                 {
                     "id": doc.get("file_id") or doc.get("key"),
                     "file_name": doc.get("file_name"),
+                    "original_name": doc.get("original_name"),
+                    "display_name": display_name,
                     "application": doc.get("application"),
                     "issue": doc.get("issue"),
                     "ingredient": doc.get("ingredient"),

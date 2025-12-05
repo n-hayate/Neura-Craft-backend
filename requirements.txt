@@ -6,6 +6,7 @@ anyio==4.11.0
 azure-core==1.36.0
 azure-identity==1.25.1
 azure-storage-blob==12.27.1
+aiohttp>=3.9.0,<4.0.0
 bcrypt==3.2.2
 certifi==2025.11.12
 cffi==2.0.0
