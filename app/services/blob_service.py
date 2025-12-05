@@ -152,19 +152,37 @@ class BlobService:
         blob_client = async_client.get_blob_client(self.container_name, blob_name)
         return await blob_client.exists()
 
-    def generate_sas_url(self, blob_identifier: str, expiry_minutes: int = 60) -> str:
+
+
+    def generate_sas_url(
+        self,
+        blob_identifier: str,
+        expiry_minutes: int = 60,
+        download_filename: str | None = None,
+    ) -> str:
         """
-        指定されたBlobへの一時的なアクセスURL (SAS URL) を生成する。
-        ローカル環境では file:// URL を返す。
+        Blob の SAS URL を生成する。
+        download_filename を指定した場合、ダウンロード名として Content-Disposition を付与する。
         """
+        # 物理 blob 名を取り出す
         _, blob_name = self._split_blob_identifier(blob_identifier)
 
+        # ローカル開発環境（file://）
         if self.use_local_storage:
             file_path = self.storage_path / blob_name
             return f"file://{file_path.absolute()}"
 
+        # Azure Blob Storage のアカウント情報
         account_name, account_key = self._parse_connection_string(settings.azure_storage_connection_string)
 
+        # Content-Disposition の設定（日本語ファイル名は URL エンコード必須）
+        content_disposition = None
+        if download_filename:
+            # filename パラメータのみを使用（エンコード済み）
+            encoded = quote(download_filename, safe='')
+            content_disposition = f'attachment; filename="{encoded}"'
+
+        # SAS トークン生成
         sas_token = generate_blob_sas(
             account_name=account_name,
             container_name=self.container_name,
@@ -172,11 +190,19 @@ class BlobService:
             account_key=account_key,
             permission=BlobSasPermissions(read=True),
             expiry=datetime.utcnow() + timedelta(minutes=expiry_minutes),
+            content_disposition=content_disposition,
         )
 
+        # Blob の実 URL を取得
         sync_client = self._get_sync_client()
         blob_client = sync_client.get_blob_client(self.container_name, blob_name)
+
+        # SAS 付きの URL を返す
         return f"{blob_client.url}?{sas_token}"
+
+    
+
+    
 
     def get_blob_url(self, blob_identifier: str) -> str:
         """SAS なしのBlob URLを取得（サムネイル等で使用）。"""

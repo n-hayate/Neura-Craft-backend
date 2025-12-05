@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Unicode, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Unicode, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -27,6 +27,9 @@ class File(Base):
     author: Mapped[str | None] = mapped_column(Unicode(255), nullable=True)
 
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="active")
+    is_preview_hidden: Mapped[bool] = mapped_column(
+        Boolean, server_default="0", nullable=False, default=False
+    )
     owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
 
     created_at: Mapped[datetime] = mapped_column(

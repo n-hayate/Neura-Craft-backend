@@ -1,6 +1,6 @@
 from datetime import datetime
 from uuid import UUID, uuid4
-
+from typing import Optional
 from pydantic import BaseModel
 
 
@@ -15,6 +15,7 @@ class FileCreate(BaseModel):
     trial_id: str | None = None
     author: str | None = None
     status: str = "active"
+    is_preview_hidden: bool = False
     owner_id: int | None = None
 
 
@@ -32,6 +33,11 @@ class FileRead(BaseModel):
     trial_id: str | None = None
     author: str | None = None
     status: str
+    is_preview_hidden: bool    
+    file_name: str
+    original_name: str | None = None
+    display_name: str | None = None
+
 
     class Config:
         from_attributes = True
@@ -42,6 +48,8 @@ class FileWithLink(BaseModel):
 
     id: str  # UUID or Base64 key
     file_name: str
+    original_name: Optional[str] = None
+    display_name: str
     application: str | None = None
     issue: str | None = None
     ingredient: str | None = None
@@ -49,8 +57,10 @@ class FileWithLink(BaseModel):
     trial_id: str | None = None
     author: str | None = None
     status: str | None = None
+    is_preview_hidden: bool = False
     updated_at: datetime | str | None = None  # datetime or ISO string
     download_link: str | None = None
+    download_count: int | None = 0
 
 
 class FileSearchResponse(BaseModel):
@@ -68,6 +78,7 @@ class FileMetadataUpdate(BaseModel):
     trial_id: str | None = None
     author: str | None = None
     status: str | None = None
+    is_preview_hidden: bool | None = None
 
 
 class FileIngestRequest(BaseModel):
