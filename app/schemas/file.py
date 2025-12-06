@@ -34,7 +34,7 @@ class FileRead(BaseModel):
     author: str | None = None
     status: str
     is_preview_hidden: bool    
-    file_name: str
+    #file_name: str
     original_name: str | None = None
     display_name: str | None = None
 
