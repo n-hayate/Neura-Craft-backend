@@ -30,7 +30,6 @@ class AuthService:
         import logging
         logger = logging.getLogger(__name__)
         logger.info(f"Registering user: {payload.email}")
-        logger.info(f"Password received in service: '{payload.password}' (len: {len(payload.password)})")
 
         existing = self.db.query(User).filter(User.email == payload.email).first()
         if existing:

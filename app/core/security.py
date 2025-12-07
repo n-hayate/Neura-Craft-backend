@@ -20,10 +20,6 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def get_password_hash(password: str) -> str:
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.info(f"Hashing password: '{password}' (len: {len(password)})")
-    
     # bcryptは72バイトを超えるパスワードをハッシュ化できないため、制限する
     try:
         password_bytes = password.encode('utf-8')
@@ -32,10 +28,10 @@ def get_password_hash(password: str) -> str:
             password = password_bytes[:72].decode('utf-8', errors='ignore')
         return pwd_context.hash(password)
     except Exception as e:
-        # エラーが発生した場合、より詳細な情報をログに記録
+        # エラーが発生した場合、より詳細な情報をログに記録（パスワード自体は出力しない）
         import logging
         logger = logging.getLogger(__name__)
-        logger.error(f"Password hashing error: {e}, password length: {len(password.encode('utf-8'))}")
+        logger.error(f"Password hashing error: {e}")
         raise
 
 

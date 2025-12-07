@@ -40,14 +40,20 @@ except ImportError:
         return buffer.getvalue()
 
 # メタデータのダミー
-PRODUCTS = ["疑似果肉入りジャム", "低糖質クッキー", "高プロテインドリンク", "米粉パン", "ヴィーガンマヨネーズ","カシューナッツパウダー"]
-ISSUES = ["粘度不足", "風味の劣化", "分離の発生", "コストダウン要求", "新規開発", "触感改善"]
+PRODUCTS = [
+    "疑似果肉入りジャム", "低糖質クッキー", "高プロテインドリンク", "米粉パン", "ヴィーガンマヨネーズ",
+    "カシューナッツパウダー", "アサイーボウル", "ピータン", "カロリーメイト"
+    ]
+ISSUES = [
+    "粘度不足", "風味の劣化", "分離の発生", "コストダウン要求", "新規開発", 
+    "触感改善", "加熱処理", "酸味抑制", "つや出し、色調"
+    ]
 INGREDIENTS = [
     "グラニュー糖", "パイナップル濃縮果汁", "ペクチンHM", "ペクチンLM", 
     "クエン酸", "クエン酸ナトリウム", "乳酸カルシウム", "難消化性デキストリン",
-    "脱脂粉乳", "植物油脂", "加工澱粉", "香料", "アスコルビン酸","ペクチンUF、ファイバー"
+    "脱脂粉乳", "植物油脂", "加工澱粉", "香料", "アスコルビン酸","ペクチンUF、ファイバー", "ペクチン", "UNIPECTINE"
 ]
-CUSTOMERS = ["ABC製菓", "XYZ飲料", "スーパーマーケットチェーンA", "コンビニエンスストアB","CCC食品"]
+CUSTOMERS = ["ABC製菓", "XYZ飲料", "スーパーマーケットチェーンA", "コンビニエンスストアB","CCC食品", "山パン", "丸ケミ"]
 AUTHORS = ["山田太郎", "鈴木一郎", "佐藤花子"]
 
 # Constants
@@ -103,7 +109,7 @@ async def seed_data():
                 )
             content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-            for i in range(2):
+            for i in range(10):
                 # メタデータをランダムに選択
                 product = random.choice(PRODUCTS)
                 issue = random.choice(ISSUES)
