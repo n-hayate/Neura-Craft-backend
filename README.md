@@ -88,24 +88,34 @@ python scripts/seed_data.py
    SEARCH_BACKEND=azure
    AZURE_SEARCH_ENDPOINT=https://<your-service-name>.search.windows.net
    AZURE_SEARCH_API_KEY=<query-key>
+   AZURE_SEARCH_SYNONYM_MAP_NAME=userdict-synonyms-v1
    AZURE_SEARCH_INDEX_NAME=neura-files-v2
    AZURE_SEARCH_DATASOURCE_NAME=neura-files-ds
    AZURE_SEARCH_INDEXER_NAME=neura-files-idx
    ```
-3. 初回セットアップ時は、Admin Key を使ってインデックス/データソース/インデクサーを作成する。
+3. 類義語辞書（`data/userdict.xlsx`）を Synonym Map として登録する。
+   ```bash
+   export AZURE_SEARCH_ADMIN_KEY=<admin-key>  # または AZURE_SEARCH_API_KEY
+   python scripts/sync_synonym_map.py --xlsx data/userdict.xlsx --map-name ${AZURE_SEARCH_SYNONYM_MAP_NAME}
+   ```
+4. 初回セットアップ時は、Admin Key を使ってインデックス/データソース/インデクサーを作成する。
    ```bash
    export AZURE_SEARCH_ADMIN_KEY=<admin-key>
    # (.env に AZURE_SEARCH_ADMIN_KEY を設定済みなら export 不要)
    python infrastructure/search_setup.py
    ```
-4. DB マイグレーションを実行する（日本語対応カラムへの変更等）。
+5. DB マイグレーションを実行する（日本語対応カラムへの変更等）。
    ```bash
    alembic upgrade head
    ```
-5. 既存データや Blob メタデータを再クロールしたい場合は、インデクサーを手動起動する（または Portal から実行）。
+6. 既存データや Blob メタデータを再クロールしたい場合は、インデクサーを手動起動する（または Portal から実行）。
    ```bash
    python scripts/reindex_search.py
    ```
+
+補足:
+
+- `infrastructure/search_setup.py` は既存インデックスがある場合、スキーマを壊さず search 可能な文字列フィールドにだけ `AZURE_SEARCH_SYNONYM_MAP_NAME` の Synonym Map を割り当て直します。クエリ時展開なので再インデックスは通常不要です。
 
 ※ Admin Key はセットアップ時のみ使用し、アプリケーションからのクエリには `AZURE_SEARCH_API_KEY`（クエリキー）を利用してください。
 
