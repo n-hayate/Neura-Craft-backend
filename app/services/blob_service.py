@@ -2,7 +2,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Any, Dict, Tuple
 
 from urllib.parse import quote
 
@@ -86,7 +86,7 @@ class BlobService:
     async def upload_blob(
         self,
         blob_name: str,
-        data: bytes,
+        data: bytes | Any,
         *,
         content_type: str | None = None,
         metadata: Dict[str, str | None] | None = None,
@@ -101,12 +101,22 @@ class BlobService:
 
         if self.use_local_storage:
             file_path = self.storage_path / blob_name
-            await asyncio.to_thread(file_path.write_bytes, data)
+            if hasattr(data, "read"):
+                # ファイルオブジェクトの場合は非同期で書き込む
+                await asyncio.to_thread(self._write_file_obj, file_path, data)
+            else:
+                # bytes の場合はそのまま書き込む
+                await asyncio.to_thread(file_path.write_bytes, data)
             return self.make_blob_path(blob_name), f"file://{file_path.absolute()}"
 
         await self._ensure_container()
         async_client = self._get_async_client()
         blob_client = async_client.get_blob_client(self.container_name, blob_name)
+        
+        # ストリームの場合は先頭にシークしておく（念のため）
+        if hasattr(data, "seek"):
+            data.seek(0)
+            
         await blob_client.upload_blob(
             data,
             overwrite=True,
@@ -114,6 +124,13 @@ class BlobService:
             content_settings=ContentSettings(content_type=content_type),
         )
         return self.make_blob_path(blob_name), blob_client.url
+    
+    def _write_file_obj(self, path: Path, file_obj: Any):
+        """同期的にファイルオブジェクトをディスクに書き込むヘルパー"""
+        file_obj.seek(0)
+        with open(path, "wb") as f:
+            while chunk := file_obj.read(1024 * 1024):  # 1MB chunk
+                f.write(chunk)
 
     async def delete_blob(self, blob_identifier: str) -> None:
         _, blob_name = self._split_blob_identifier(blob_identifier)

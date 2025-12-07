@@ -48,7 +48,8 @@ class Settings(BaseSettings):
                     data[cors_key] = origins if origins else ["http://localhost:3000"]
         return data
 
-    secret_key: str = Field(default="change-me")
+    # secret_key: str = Field(default="change-me") 
+    secret_key: str = Field(...) # defaultを削除して、.envに無いと起動エラーにする
     access_token_expire_minutes: int = Field(default=30)
     jwt_algorithm: str = Field(default="HS256")
 

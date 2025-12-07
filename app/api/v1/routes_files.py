@@ -313,8 +313,29 @@ async def upload_file(
     if not uploaded_file.filename:
         raise HTTPException(status_code=400, detail="Filename is required.")
 
-    data = await uploaded_file.read()
-    logger.info("Uploading file: %s (%d bytes)", uploaded_file.filename, len(data))
+    # 拡張子の検証
+    ALLOWED_EXTENSIONS = {
+        '.pdf', '.docx', '.xlsx', '.pptx', '.txt',
+        '.doc', '.xls', '.ppt'
+    }
+    _, ext = os.path.splitext(uploaded_file.filename)
+    if not ext or ext.lower() not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"File extension not allowed. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
+        )
+
+    # 1. Content-Length によるサイズチェック (100MB)
+    MAX_FILE_SIZE = 100 * 1024 * 1024
+    content_length = uploaded_file.size
+    if content_length and content_length > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum size allowed is {MAX_FILE_SIZE / (1024 * 1024)}MB"
+        )
+
+    # data = await uploaded_file.read()  # メモリ節約のため一括読み込みを廃止
+    logger.info("Uploading file: %s (approx %d bytes)", uploaded_file.filename, content_length or 0)
 
     file_id = str(uuid4())
     original_name = uploaded_file.filename
@@ -341,7 +362,7 @@ async def upload_file(
         try:
             blob_path, _ = await blob_service.upload_blob(
                 blob_name,
-                data,
+                uploaded_file.file,  # ファイルオブジェクトを直接渡す (ストリーミング)
                 content_type=uploaded_file.content_type,
                 metadata=metadata,
             )
