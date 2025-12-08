@@ -29,7 +29,7 @@ from azure.search.documents.indexes.models import (
     SearchIndex,
     SearchableField,
     SimpleField,
-    IndexingParameters
+    IndexingParameters,
 )
 
 
@@ -53,11 +53,23 @@ def get_admin_key() -> str:
     )
 
 
-def build_index(index_name: str) -> SearchIndex:
+def build_index(index_name: str, synonym_map_name: str | None = None) -> SearchIndex:
     """Define the v2 index structure."""
+    synonym_maps = [synonym_map_name] if synonym_map_name else None
     fields = [
         SimpleField(name="key", type=SearchFieldDataType.String, key=True, filterable=True),
-        SearchableField(name="file_name", type=SearchFieldDataType.String, analyzer_name="ja.microsoft"),
+        SearchableField(
+            name="file_name",
+            type=SearchFieldDataType.String,
+            analyzer_name="ja.microsoft",
+            synonym_map_names=synonym_maps,
+        ),
+        SearchableField(
+            name="original_name",
+            type=SearchFieldDataType.String,
+            analyzer_name="ja.microsoft",
+            synonym_map_names=synonym_maps,
+        ),
         SimpleField(name="file_id", type=SearchFieldDataType.String, filterable=True),
         SimpleField(name="owner_id", type=SearchFieldDataType.String, filterable=True),
         SearchableField(
@@ -66,13 +78,20 @@ def build_index(index_name: str) -> SearchIndex:
             analyzer_name="ja.microsoft",
             filterable=True,
             facetable=True,
+            synonym_map_names=synonym_maps,
         ),
-        SearchableField(name="issue", type=SearchFieldDataType.String, analyzer_name="ja.microsoft"),
+        SearchableField(
+            name="issue",
+            type=SearchFieldDataType.String,
+            analyzer_name="ja.microsoft",
+            synonym_map_names=synonym_maps,
+        ),
         SearchableField(
             name="ingredient",
             type=SearchFieldDataType.String,
             analyzer_name="ja.microsoft",
             filterable=True,
+            synonym_map_names=synonym_maps,
         ),
         SearchableField(
             name="customer",
@@ -80,21 +99,29 @@ def build_index(index_name: str) -> SearchIndex:
             analyzer_name="ja.microsoft",
             filterable=True,
             facetable=True,
+            synonym_map_names=synonym_maps,
         ),
         SearchableField(
             name="trial_id",
             type=SearchFieldDataType.String,
             analyzer_name="ja.microsoft",
             filterable=True,
+            synonym_map_names=synonym_maps,
         ),
         SearchableField(
             name="author",
             type=SearchFieldDataType.String,
             analyzer_name="ja.microsoft",
             filterable=True,
+            synonym_map_names=synonym_maps,
         ),
         SimpleField(name="status", type=SearchFieldDataType.String, filterable=True),
-        SearchableField(name="content", type=SearchFieldDataType.String, analyzer_name="ja.microsoft"),
+        SearchableField(
+            name="content",
+            type=SearchFieldDataType.String,
+            analyzer_name="ja.microsoft",
+            synonym_map_names=synonym_maps,
+        ),
         SimpleField(name="blob_path", type=SearchFieldDataType.String, filterable=True),
         SimpleField(name="created_at", type=SearchFieldDataType.DateTimeOffset, sortable=True, filterable=True),
         SimpleField(name="updated_at", type=SearchFieldDataType.DateTimeOffset, sortable=True, filterable=True),
@@ -102,15 +129,30 @@ def build_index(index_name: str) -> SearchIndex:
     return SearchIndex(name=index_name, fields=fields)
 
 
-def ensure_index(client: SearchIndexClient, index_name: str) -> None:
-    index = build_index(index_name)
+def ensure_index(client: SearchIndexClient, index_name: str, synonym_map_name: str | None = None) -> None:
     try:
-        client.get_index(index_name)
-        client.create_or_update_index(index)
+        existing = client.get_index(index_name)
+        if synonym_map_name:
+            synonym_maps = [synonym_map_name]
+            for field in existing.fields:
+                if getattr(field, "searchable", False) and getattr(field, "type", None) == SearchFieldDataType.String:
+                    field.synonym_map_names = synonym_maps
+        client.create_or_update_index(existing)
         print(f"[SearchSetup] Updated index '{index_name}'.")
-    except Exception:
+        return
+    except Exception as exc:
+        # If not found, proceed to create; otherwise, surface the issue after create attempt
+        not_found = "NotFound" in str(exc)
+        if not not_found:
+            print(f"[SearchSetup] get_index failed ({exc}), attempting to create index.")
+
+    index = build_index(index_name, synonym_map_name=synonym_map_name)
+    try:
         client.create_index(index)
         print(f"[SearchSetup] Created index '{index_name}'.")
+    except Exception as exc:
+        print(f"[SearchSetup] Failed to create index '{index_name}': {exc}")
+        raise
 
 
 def ensure_data_source(
@@ -189,12 +231,18 @@ def main():
     data_source_name = env("AZURE_SEARCH_DATASOURCE_NAME", "neura-files-ds")
     indexer_name = env("AZURE_SEARCH_INDEXER_NAME", "neura-files-idx")
     container_name = env("AZURE_BLOB_FILES_CONTAINER", "files")
+    synonym_map_name = os.getenv("AZURE_SEARCH_SYNONYM_MAP_NAME")
 
     credential = AzureKeyCredential(admin_key)
     index_client = SearchIndexClient(endpoint=endpoint, credential=credential)
     indexer_client = SearchIndexerClient(endpoint=endpoint, credential=credential)
 
-    ensure_index(index_client, index_name)
+    if synonym_map_name:
+        print(f"[SearchSetup] Using synonym map '{synonym_map_name}' for searchable fields.")
+    else:
+        print("[SearchSetup] No synonym map configured. Set AZURE_SEARCH_SYNONYM_MAP_NAME to enable it.")
+
+    ensure_index(index_client, index_name, synonym_map_name=synonym_map_name)
     ensure_data_source(indexer_client, data_source_name, storage_connection_string, container_name)
     ensure_indexer(
         indexer_client,
