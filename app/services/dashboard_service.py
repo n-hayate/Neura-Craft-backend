@@ -63,6 +63,15 @@ class DashboardService:
             FileDownload.downloaded_at >= last_month
         ).scalar() or 0
         
+        # 新規追加: 今月のダウンロード数
+        downloads_this_month = self._get_downloads_this_month()
+        
+        # 新規追加: 先週のダウンロード数Top3
+        top_downloads_last_week = self._get_top_downloads_last_week()
+        
+        # 新規追加: 登録件数推移
+        registration_trend = self._get_registration_trend()
+        
         word_cloud = self._generate_word_cloud()
 
         response_data = {
@@ -72,6 +81,9 @@ class DashboardService:
             "ingredient_ranking": ingredient_ranking,
             "download_ranking": download_ranking,
             "total_downloads_last_month": total_downloads_last_month,
+            "downloads_this_month": downloads_this_month,
+            "top_downloads_last_week": top_downloads_last_week,
+            "registration_trend": registration_trend,
             "issue_word_cloud": word_cloud
         }
 
@@ -106,6 +118,79 @@ class DashboardService:
             .all()
         )
         return [{"name": r[0], "count": r[1]} for r in results]
+
+    def _get_downloads_this_month(self) -> int:
+        """今月のダウンロード数を取得（今月1日00:00:00から今日23:59:59まで）"""
+        from app.db.models.file_download import FileDownload
+        
+        now = datetime.now()
+        # 今月1日の00:00:00
+        start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        
+        count = self.db.query(func.count(FileDownload.id)).filter(
+            FileDownload.downloaded_at >= start_of_month
+        ).scalar() or 0
+        
+        return count
+
+    def _get_top_downloads_last_week(self, limit: int = 3) -> list[dict]:
+        """先週のダウンロード数Top3を取得（先週月曜日00:00:00から先週日曜日23:59:59まで）"""
+        from app.db.models.file_download import FileDownload
+        
+        now = datetime.now()
+        # 今日が何曜日か（0=月曜日、6=日曜日）
+        days_since_monday = now.weekday()
+        # 先週の月曜日を計算（今日から7日前の週の月曜日）
+        days_to_last_monday = days_since_monday + 7
+        last_monday = now - timedelta(days=days_to_last_monday)
+        last_monday = last_monday.replace(hour=0, minute=0, second=0, microsecond=0)
+        # 先週の日曜日（先週月曜日から6日後）
+        last_sunday = last_monday + timedelta(days=6)
+        last_sunday = last_sunday.replace(hour=23, minute=59, second=59, microsecond=999999)
+        
+        results = (
+            self.db.query(File.original_name, func.count(FileDownload.id).label('count'))
+            .join(FileDownload, File.id == FileDownload.file_id)
+            .filter(
+                FileDownload.downloaded_at >= last_monday,
+                FileDownload.downloaded_at <= last_sunday
+            )
+            .group_by(File.id, File.original_name)
+            .order_by(func.count(FileDownload.id).desc())
+            .limit(limit)
+            .all()
+        )
+        return [{"name": r[0], "count": r[1]} for r in results]
+
+    def _get_registration_trend(self, days: int = 30) -> list[dict]:
+        """登録件数推移を取得（過去N日間の日付ごとの集計）"""
+        from sqlalchemy import cast, Date
+        
+        # 過去N日間の開始日時
+        start_date = datetime.now() - timedelta(days=days)
+        start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # 日付ごとに集計
+        results = (
+            self.db.query(
+                cast(File.created_at, Date).label('date'),
+                func.count(File.id).label('count')
+            )
+            .filter(
+                File.status == 'active',
+                File.created_at >= start_date
+            )
+            .group_by(cast(File.created_at, Date))
+            .order_by(cast(File.created_at, Date).asc())
+            .all()
+        )
+        
+        # 日付を文字列形式（YYYY-MM-DD）に変換
+        return [
+            {"date": r[0].strftime("%Y-%m-%d"), "count": r[1]}
+            for r in results
+            if r[0] is not None
+        ]
 
     def _generate_word_cloud(self, limit: int = 50) -> dict[str, int]:
         # issueフィールドのテキストを全取得
