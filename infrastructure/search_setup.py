@@ -22,14 +22,15 @@ from azure.search.documents.indexes import SearchIndexClient, SearchIndexerClien
 from azure.search.documents.indexes.models import (
     FieldMapping,
     FieldMappingFunction,
+    IndexingParameters,
     SearchFieldDataType,
+    SearchIndex,
     SearchIndexer,
     SearchIndexerDataContainer,
     SearchIndexerDataSourceConnection,
-    SearchIndex,
+    SearchSuggester,
     SearchableField,
     SimpleField,
-    IndexingParameters,
 )
 
 
@@ -126,33 +127,18 @@ def build_index(index_name: str, synonym_map_name: str | None = None) -> SearchI
         SimpleField(name="created_at", type=SearchFieldDataType.DateTimeOffset, sortable=True, filterable=True),
         SimpleField(name="updated_at", type=SearchFieldDataType.DateTimeOffset, sortable=True, filterable=True),
     ]
-    return SearchIndex(name=index_name, fields=fields)
+    suggester = SearchSuggester(
+        name="nc-suggester",
+        source_fields=["application", "issue", "ingredient", "customer"],
+        search_mode="analyzingInfixMatching",
+    )
+    return SearchIndex(name=index_name, fields=fields, suggesters=[suggester])
 
 
 def ensure_index(client: SearchIndexClient, index_name: str, synonym_map_name: str | None = None) -> None:
-    try:
-        existing = client.get_index(index_name)
-        if synonym_map_name:
-            synonym_maps = [synonym_map_name]
-            for field in existing.fields:
-                if getattr(field, "searchable", False) and getattr(field, "type", None) == SearchFieldDataType.String:
-                    field.synonym_map_names = synonym_maps
-        client.create_or_update_index(existing)
-        print(f"[SearchSetup] Updated index '{index_name}'.")
-        return
-    except Exception as exc:
-        # If not found, proceed to create; otherwise, surface the issue after create attempt
-        not_found = "NotFound" in str(exc)
-        if not not_found:
-            print(f"[SearchSetup] get_index failed ({exc}), attempting to create index.")
-
     index = build_index(index_name, synonym_map_name=synonym_map_name)
-    try:
-        client.create_index(index)
-        print(f"[SearchSetup] Created index '{index_name}'.")
-    except Exception as exc:
-        print(f"[SearchSetup] Failed to create index '{index_name}': {exc}")
-        raise
+    client.create_or_update_index(index)
+    print(f"[SearchSetup] Created/updated index '{index_name}'.")
 
 
 def ensure_data_source(

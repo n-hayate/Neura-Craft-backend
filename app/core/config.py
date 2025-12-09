@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     azure_search_endpoint: str = ""
     azure_search_api_key: str = ""
     azure_search_index_name: str = "neura-files-v2"
+    azure_search_suggester_name: str = "nc-suggester"
 
 
 

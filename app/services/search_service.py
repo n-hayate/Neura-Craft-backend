@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from azure.core.credentials import AzureKeyCredential
 from azure.search.documents import SearchClient
+from urllib.parse import unquote
 
 from app.core.config import get_settings
 
@@ -13,6 +14,7 @@ settings = get_settings()
 
 class SearchService:
     SEARCH_FIELDS = ["content", "original_name", "application", "customer", "trial_id", "ingredient", "author"]
+    SUGGEST_SEARCH_FIELDS = ["application", "issue", "ingredient", "customer"]
 
     def __init__(self) -> None:
         endpoint = settings.azure_search_endpoint
@@ -33,6 +35,53 @@ class SearchService:
 
     def _escape(self, value: str) -> str:
         return value.replace("'", "''")
+
+    def suggest(
+        self,
+        *,
+        query: str,
+        top: int = 8,
+        owner_id: int | None = None,
+        use_fuzzy: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """Azure Search Suggest API ラッパー"""
+        if not self.client:
+            raise RuntimeError("Azure Search client is not configured.")
+
+        if not query:
+            return []
+
+        suggest_filter = None
+        if owner_id is not None:
+            suggest_filter = f"owner_id eq '{owner_id}'"
+
+        try:
+            results = self.client.suggest(
+                search_text=query,
+                suggester_name=settings.azure_search_suggester_name,
+                filter=suggest_filter,
+                top=top,
+                use_fuzzy_matching=use_fuzzy,
+            )
+        except Exception as exc:
+            logger.exception("Azure Search suggest failed")
+            raise
+
+        suggestions: List[Dict[str, Any]] = []
+        for item in results:
+            text = item.get("@search.text") or item.get("text") or item.get("suggest_text")
+            if not text:
+                continue
+            decoded_text = unquote(text)
+            suggestions.append(
+                {
+                    "text": decoded_text,
+                    "id": item.get("file_id") or item.get("id") or item.get("key"),
+                    "original_name": unquote(item.get("original_name") or item.get("file_name") or ""),
+                }
+            )
+
+        return suggestions
 
     def search(
         self,
@@ -103,13 +152,15 @@ class SearchService:
 
         files: List[Dict[str, Any]] = []
         for doc in results:
-            display_name = doc.get("original_name") or doc.get("file_name")
+            original_name = doc.get("original_name")
+            decoded_original = unquote(original_name) if original_name else None
+            display_name = decoded_original or doc.get("file_name")
 
             files.append(
                 {
                     "id": doc.get("file_id") or doc.get("key"),
                     "file_name": doc.get("file_name"),
-                    "original_name": doc.get("original_name"),
+                    "original_name": decoded_original or original_name,
                     "display_name": display_name,
                     "application": doc.get("application"),
                     "issue": doc.get("issue"),

@@ -20,6 +20,7 @@ from app.schemas.file import (
     FileMetadataUpdate,
     FileRead,
     FileSearchResponse,
+    FileSuggestResponse,
     FileWithLink,
 )
 from app.schemas.reference import ReferenceCreate, ReferenceRead
@@ -128,6 +129,34 @@ def get_dashboard(
     """ダッシュボード用データ取得"""
     service = DashboardService(db)
     return service.get_dashboard_data()
+
+
+@router.get("/suggest", response_model=FileSuggestResponse)
+def suggest_files(
+    q: str = Query(..., min_length=1, description="サジェスト用の入力文字列"),
+    top: int = Query(8, ge=1, le=20),
+    use_suggest: bool = Query(True, description="サジェストを有効化/無効化"),
+    mine_only: bool = Query(False, description="自分のファイルのみ対象にする"),
+    db=Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Azure Search Suggest API 経由の候補取得"""
+    if not use_suggest:
+        return {"suggestions": []}
+
+    service = FileService(db)
+    owner_id = current_user.id if mine_only else None
+
+    try:
+        suggestions = service.suggest(q=q, top=top, owner_id=owner_id)
+    except RuntimeError as exc:
+        logger.warning("Suggest unavailable: %s", exc)
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Suggest failed")
+        raise HTTPException(status_code=502, detail="Suggest backend error") from exc
+
+    return {"suggestions": suggestions}
 
 
 @router.get("/", response_model=list[FileRead])

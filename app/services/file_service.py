@@ -123,6 +123,25 @@ class FileService:
 
         return total_count, files
 
+    def suggest(
+        self,
+        *,
+        owner_id: int | None = None,
+        q: str,
+        top: int = 8,
+        use_fuzzy: bool = False,
+    ) -> List[dict]:
+        """Azure AI Search のサジェスト"""
+        if not self.search_service.is_enabled():
+            raise RuntimeError("Azure Search is not configured.")
+
+        return self.search_service.suggest(
+            query=q,
+            top=top,
+            owner_id=owner_id,
+            use_fuzzy=use_fuzzy,
+        )
+
     def update_metadata(self, file_id: str, payload: FileMetadataUpdate) -> File:
         """メタデータの部分更新"""
         file_obj = self.get(file_id)

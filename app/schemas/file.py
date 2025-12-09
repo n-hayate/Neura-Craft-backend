@@ -68,6 +68,16 @@ class FileSearchResponse(BaseModel):
     files: list[FileWithLink]
 
 
+class SuggestionItem(BaseModel):
+    text: str
+    id: str | None = None
+    original_name: str | None = None
+
+
+class FileSuggestResponse(BaseModel):
+    suggestions: list[SuggestionItem]
+
+
 class FileMetadataUpdate(BaseModel):
     """メタデータ更新用: 送られてきた項目のみ更新"""
 

@@ -59,6 +59,7 @@ python scripts/seed_data.py
 | `AZURE_SEARCH_INDEX_NAME`         | インデックス名 (例: `neura-files-v2`)                  |
 | `AZURE_SEARCH_DATASOURCE_NAME`    | データソース名 (例: `neura-files-ds`)                  |
 | `AZURE_SEARCH_INDEXER_NAME`       | インデクサー名 (例: `neura-files-idx`)                 |
+| `AZURE_SEARCH_SUGGESTER_NAME`     | サジェスター名 (例: `nc-suggester`)                    |
 
 ### ストレージ設定（ローカル / Azure）
 
@@ -92,6 +93,7 @@ python scripts/seed_data.py
    AZURE_SEARCH_INDEX_NAME=neura-files-v2
    AZURE_SEARCH_DATASOURCE_NAME=neura-files-ds
    AZURE_SEARCH_INDEXER_NAME=neura-files-idx
+   AZURE_SEARCH_SUGGESTER_NAME=nc-suggester
    ```
 3. 類義語辞書（`data/userdict.xlsx`）を Synonym Map として登録する。
    ```bash
@@ -275,6 +277,38 @@ const result = await response.json();
 ```
 
 フロント側では `files` 配列を一覧表示に使い、`total_count` でページネーション総件数を表示できます。
+
+---
+
+### `GET /api/v1/files/suggest`（検索サジェスト）
+
+Azure AI Search の Suggest API をプロキシします。フロント側でサジェスト ON/OFF を切り替え可能。
+
+#### クエリパラメータ
+
+| パラメータ名  | 型     | 必須 | 説明                                            |
+| ------------- | ------ | ---- | ----------------------------------------------- |
+| `q`           | string | 必須 | サジェスト用の入力文字列（例: `"カル"`）        |
+| `top`         | int    | 任意 | 返却件数（デフォルト 8, 最大 20）               |
+| `use_suggest` | bool   | 任意 | `true` でサジェスト実行、`false` で空配列を返す |
+| `mine_only`   | bool   | 任意 | `true` の場合は自分のファイルのみに限定         |
+
+#### レスポンス
+
+```json
+{
+  "suggestions": [
+    { "text": "カルボナーラソース（TK-2023-001）", "id": "abc123" },
+    { "text": "カルビ焼肉のタレ", "id": "def456" }
+  ]
+}
+```
+
+#### 補足
+
+- サジェスター名は `.env` の `AZURE_SEARCH_SUGGESTER_NAME` に設定（デフォルト `nc-suggester`）。
+- インデックス側で `suggest_text` フィールドを `sourceFields` に指定したサジェスターを事前に作成してください。
+- `mine_only=true` の場合、`owner_id` でフィルタして返します。
 
 ---
 
