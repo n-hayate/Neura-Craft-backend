@@ -92,11 +92,11 @@ class BlobService:
         metadata: Dict[str, str | None] | None = None,
     ) -> tuple[str, str | None]:
         # Filter out empty values and URL-encode values to support non-ASCII characters
+        # Azure Blob Storage HTTP headers only support ASCII characters
         encoded_metadata = {}
         if metadata:
             for k, v in metadata.items():
                 if v:
-                    # Azure Blob Storage headers must be ASCII. URL-encode value.
                     encoded_metadata[k] = quote(str(v))
 
         if self.use_local_storage:

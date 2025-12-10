@@ -12,7 +12,7 @@ settings = get_settings()
 
 
 class SearchService:
-    SEARCH_FIELDS = ["content", "original_name", "application", "customer", "trial_id", "ingredient", "author"]
+    SEARCH_FIELDS = ["content", "original_name", "application", "customer", "trial_id", "ingredient", "author", "issue"]
 
     def __init__(self) -> None:
         endpoint = settings.azure_search_endpoint
@@ -59,6 +59,7 @@ class SearchService:
 
         def add_filter(field: str, value: Optional[str]) -> None:
             if value:
+                # インデクサーがデコードするため、日本語のままフィルター可能
                 filter_clauses.append(f"{field} eq '{self._escape(value)}'")
 
         add_filter("application", application)
@@ -87,6 +88,7 @@ class SearchService:
             page_size = 10
         skip = (page - 1) * page_size
 
+        # インデクサーがデコードするため、日本語のまま検索可能
         search_text = query or "*"
 
         logger.info(f"Searching index: {self.client._index_name} query: '{search_text}' filter: '{filter_expression}'")
@@ -103,13 +105,15 @@ class SearchService:
 
         files: List[Dict[str, Any]] = []
         for doc in results:
-            display_name = doc.get("original_name") or doc.get("file_name")
+            original_name = doc.get("original_name")
+            file_name = doc.get("file_name")
+            display_name = original_name or file_name
 
             files.append(
                 {
                     "id": doc.get("file_id") or doc.get("key"),
-                    "file_name": doc.get("file_name"),
-                    "original_name": doc.get("original_name"),
+                    "file_name": file_name,
+                    "original_name": original_name,
                     "display_name": display_name,
                     "application": doc.get("application"),
                     "issue": doc.get("issue"),
@@ -131,4 +135,3 @@ class SearchService:
         if isinstance(value, datetime):
             return value.isoformat()
         return value
-
