@@ -180,6 +180,7 @@ def ensure_indexer(
     data_source_name: str,
     target_index_name: str,
 ) -> None:
+    # 基本マッピング（ストレージメタデータ）
     base_mappings = [
         FieldMapping(
             source_field_name="metadata_storage_path",
@@ -189,29 +190,27 @@ def ensure_indexer(
         FieldMapping(source_field_name="metadata_storage_path", target_field_name="blob_path"),
         FieldMapping(source_field_name="metadata_storage_name", target_field_name="file_name"),
         FieldMapping(source_field_name="metadata_storage_last_modified", target_field_name="updated_at"),
-        FieldMapping(source_field_name="metadata_creation_time", target_field_name="created_at"),
+        
+        # URLエンコードされたBlobメタデータをデコードしてインデックスに格納
+        # これにより、日本語のままインデックスに保存され、キーワード検索が正常に動作する
+        FieldMapping(source_field_name="original_name", target_field_name="original_name", mapping_function=FieldMappingFunction(name="urlDecode")),
+        FieldMapping(source_field_name="application", target_field_name="application", mapping_function=FieldMappingFunction(name="urlDecode")),
+        FieldMapping(source_field_name="issue", target_field_name="issue", mapping_function=FieldMappingFunction(name="urlDecode")),
+        FieldMapping(source_field_name="ingredient", target_field_name="ingredient", mapping_function=FieldMappingFunction(name="urlDecode")),
+        FieldMapping(source_field_name="customer", target_field_name="customer", mapping_function=FieldMappingFunction(name="urlDecode")),
+        FieldMapping(source_field_name="trial_id", target_field_name="trial_id", mapping_function=FieldMappingFunction(name="urlDecode")),
+        FieldMapping(source_field_name="author", target_field_name="author", mapping_function=FieldMappingFunction(name="urlDecode")),
+        FieldMapping(source_field_name="status", target_field_name="status", mapping_function=FieldMappingFunction(name="urlDecode")),
+        FieldMapping(source_field_name="file_id", target_field_name="file_id", mapping_function=FieldMappingFunction(name="urlDecode")),
+        FieldMapping(source_field_name="owner_id", target_field_name="owner_id", mapping_function=FieldMappingFunction(name="urlDecode")),
     ]
-
-    custom_metadata_mappings = [
-        FieldMapping(source_field_name="x-ms-meta-application", target_field_name="application"),
-        FieldMapping(source_field_name="x-ms-meta-issue", target_field_name="issue"),
-        FieldMapping(source_field_name="x-ms-meta-ingredient", target_field_name="ingredient"),
-        FieldMapping(source_field_name="x-ms-meta-customer", target_field_name="customer"),
-        FieldMapping(source_field_name="x-ms-meta-trial_id", target_field_name="trial_id"),
-        FieldMapping(source_field_name="x-ms-meta-author", target_field_name="author"),
-        FieldMapping(source_field_name="x-ms-meta-status", target_field_name="status"),
-        FieldMapping(source_field_name="x-ms-meta-file_id", target_field_name="file_id"),
-        FieldMapping(source_field_name="x-ms-meta-owner_id", target_field_name="owner_id"),
-    ]
-
-    mapping_objects = base_mappings + custom_metadata_mappings
 
     indexer = SearchIndexer(
         name=indexer_name,
         data_source_name=data_source_name,
         target_index_name=target_index_name,
         description="Blob -> Search indexer for NeuraCraft files",
-        field_mappings=mapping_objects,
+        field_mappings=base_mappings,
         parameters={"configuration": {"dataToExtract": "contentAndMetadata", "parsingMode": "default"}},
     )
 
