@@ -62,8 +62,9 @@ class SearchService:
                 # インデクサーがデコードするため、日本語のままフィルター可能
                 filter_clauses.append(f"{field} eq '{self._escape(value)}'")
 
+        # フィルタ可能なフィールドのみを使用（issueはfilterable=Falseのため除外）
         add_filter("application", application)
-        add_filter("issue", issue)
+        # issueはfilterable=Falseのため、フィルタではなく検索クエリで使用
         add_filter("ingredient", ingredient)
         add_filter("customer", customer)
         add_filter("trial_id", trial_id)
@@ -90,9 +91,17 @@ class SearchService:
 
         # インデクサーがデコードするため、日本語のまま検索可能
         # 前方一致検索のため、queryが存在する場合は末尾に*を自動で追加
+        # issueはfilterable=Falseのため、検索クエリに含める
+        search_terms = []
         if query and query.strip():
-            # 既に末尾に*が含まれている場合は追加しない
-            search_text = query if query.rstrip().endswith("*") else query.rstrip() + "*"
+            search_terms.append(query)
+        if issue and issue.strip():
+            search_terms.append(issue)
+        
+        if search_terms:
+            # 複数の検索語を結合（AND検索）
+            combined_query = " ".join(search_terms)
+            search_text = combined_query if combined_query.rstrip().endswith("*") else combined_query.rstrip() + "*"
         else:
             search_text = "*"
 
@@ -134,6 +143,112 @@ class SearchService:
 
         total_count = results.get_count() or 0
         return total_count, files
+
+    def search_for_rag(
+        self,
+        *,
+        query: str | None,
+        application: str | None = None,
+        issue: str | None = None,
+        ingredient: str | None = None,
+        customer: str | None = None,
+        trial_id: str | None = None,
+        author: str | None = None,
+        owner_id: int | None = None,
+        status: str | None = None,
+        sort_by: str = "updated_at_desc",
+        top: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """
+        RAG（Retrieval-Augmented Generation）用の検索メソッド（PoC用）
+        上位N件のcontentフィールドを含む結果を返す。
+        
+        注意: contentフィールドは大きいため、通常の検索APIでは使用しない。
+        このメソッドはLLM分析などのPoC用途専用。
+        """
+        if not self.client:
+            raise RuntimeError("Azure Search client is not configured.")
+
+        filter_clauses = []
+        if status:
+            filter_clauses.append(f"status eq '{self._escape(status)}'")
+
+        def add_filter(field: str, value: Optional[str]) -> None:
+            if value:
+                filter_clauses.append(f"{field} eq '{self._escape(value)}'")
+
+        # フィルタ可能なフィールドのみを使用（issueはfilterable=Falseのため除外）
+        add_filter("application", application)
+        # issueはfilterable=Falseのため、フィルタではなく検索クエリで使用
+        add_filter("ingredient", ingredient)
+        add_filter("customer", customer)
+        add_filter("trial_id", trial_id)
+        add_filter("author", author)
+
+        if owner_id is not None:
+            filter_clauses.append(f"owner_id eq '{owner_id}'")
+
+        filter_expression = " and ".join(filter_clauses) if filter_clauses else None
+
+        order_map = {
+            "updated_at_desc": "updated_at desc",
+            "updated_at_asc": "updated_at asc",
+            "created_at_desc": "created_at desc",
+            "created_at_asc": "created_at asc",
+        }
+        order_by = [order_map[sort_by]] if sort_by in order_map else None
+
+        # 前方一致検索のため、queryが存在する場合は末尾に*を自動で追加
+        # issueはfilterable=Falseのため、検索クエリに含める
+        search_terms = []
+        if query and query.strip():
+            search_terms.append(query)
+        if issue and issue.strip():
+            search_terms.append(issue)
+        
+        if search_terms:
+            # 複数の検索語を結合（AND検索）
+            combined_query = " ".join(search_terms)
+            search_text = combined_query if combined_query.rstrip().endswith("*") else combined_query.rstrip() + "*"
+        else:
+            search_text = "*"
+
+        logger.info(f"Searching for RAG: query='{search_text}' top={top}")
+
+        results = self.client.search(
+            search_text=search_text,
+            search_fields=self.SEARCH_FIELDS,
+            filter=filter_expression,
+            order_by=order_by,
+            top=top,
+            include_total_count=False,
+        )
+
+        files: List[Dict[str, Any]] = []
+        for doc in results:
+            original_name = doc.get("original_name")
+            file_name = doc.get("file_name")
+            content = doc.get("content", "")
+
+            files.append(
+                {
+                    "id": doc.get("file_id") or doc.get("key"),
+                    "file_name": file_name,
+                    "original_name": original_name,
+                    "display_name": original_name or file_name,
+                    "content": content,
+                    "application": doc.get("application"),
+                    "issue": doc.get("issue"),
+                    "ingredient": doc.get("ingredient"),
+                    "customer": doc.get("customer"),
+                    "trial_id": doc.get("trial_id"),
+                    "author": doc.get("author"),
+                    "status": doc.get("status"),
+                    "updated_at": self._serialize_datetime(doc.get("updated_at")),
+                }
+            )
+
+        return files
 
     @staticmethod
     def _serialize_datetime(value: Any) -> Any:

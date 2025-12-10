@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.routes_auth import router as auth_router
 from app.api.v1.routes_files import router as files_router
 from app.api.v1.routes_users import router as users_router
+from app.api.v1.routes_ai import router as ai_router
 from app.core.config import get_settings
 from app.core.logging_config import configure_logging
 
@@ -42,6 +43,7 @@ def create_app() -> FastAPI:
     api_router.include_router(auth_router)
     api_router.include_router(users_router)
     api_router.include_router(files_router)
+    api_router.include_router(ai_router)
 
     application.include_router(api_router, prefix=settings.api_v1_str)
 
