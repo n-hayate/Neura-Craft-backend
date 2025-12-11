@@ -90,18 +90,23 @@ class SearchService:
         skip = (page - 1) * page_size
 
         # インデクサーがデコードするため、日本語のまま検索可能
-        # 前方一致検索のため、queryが存在する場合は末尾に*を自動で追加
+        # シノニム展開と前方一致の両方をサポートするため、(query|query*)の形式を使用
+        # ワイルドカードが付いているとシノニム展開が無効になるため、クリーンな単語とワイルドカード付きをORで結合
         # issueはfilterable=Falseのため、検索クエリに含める
         search_terms = []
         if query and query.strip():
-            search_terms.append(query)
+            q = query.strip()
+            # 「ファミマ」なら -> (ファミマ|ファミマ*) となる
+            # これで "ファミマ"(シノニム有効) OR "ファミマ*"(前方一致) の検索になります
+            search_terms.append(f"({q}|{q}*)")
         if issue and issue.strip():
-            search_terms.append(issue)
+            i = issue.strip()
+            # issueも同様に処理
+            search_terms.append(f"({i}|{i}*)")
         
         if search_terms:
             # 複数の検索語を結合（AND検索）
-            combined_query = " ".join(search_terms)
-            search_text = combined_query if combined_query.rstrip().endswith("*") else combined_query.rstrip() + "*"
+            search_text = " ".join(search_terms)
         else:
             search_text = "*"
 
@@ -198,18 +203,23 @@ class SearchService:
         }
         order_by = [order_map[sort_by]] if sort_by in order_map else None
 
-        # 前方一致検索のため、queryが存在する場合は末尾に*を自動で追加
+        # シノニム展開と前方一致の両方をサポートするため、(query|query*)の形式を使用
+        # ワイルドカードが付いているとシノニム展開が無効になるため、クリーンな単語とワイルドカード付きをORで結合
         # issueはfilterable=Falseのため、検索クエリに含める
         search_terms = []
         if query and query.strip():
-            search_terms.append(query)
+            q = query.strip()
+            # 「ファミマ」なら -> (ファミマ|ファミマ*) となる
+            # これで "ファミマ"(シノニム有効) OR "ファミマ*"(前方一致) の検索になります
+            search_terms.append(f"({q}|{q}*)")
         if issue and issue.strip():
-            search_terms.append(issue)
+            i = issue.strip()
+            # issueも同様に処理
+            search_terms.append(f"({i}|{i}*)")
         
         if search_terms:
             # 複数の検索語を結合（AND検索）
-            combined_query = " ".join(search_terms)
-            search_text = combined_query if combined_query.rstrip().endswith("*") else combined_query.rstrip() + "*"
+            search_text = " ".join(search_terms)
         else:
             search_text = "*"
 
