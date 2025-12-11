@@ -89,7 +89,12 @@ class SearchService:
         skip = (page - 1) * page_size
 
         # インデクサーがデコードするため、日本語のまま検索可能
-        search_text = query or "*"
+        # 前方一致検索のため、queryが存在する場合は末尾に*を自動で追加
+        if query and query.strip():
+            # 既に末尾に*が含まれている場合は追加しない
+            search_text = query if query.rstrip().endswith("*") else query.rstrip() + "*"
+        else:
+            search_text = "*"
 
         logger.info(f"Searching index: {self.client._index_name} query: '{search_text}' filter: '{filter_expression}'")
 
