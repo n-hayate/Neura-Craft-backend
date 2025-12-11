@@ -39,8 +39,10 @@ jobs:
           name: python-app
           path: |
             .
-           # !antenv/
-
+              !antenv/
+              !__pycache__/
+ 
+              
       # 🚫 Opting Out of Oryx Build
       # If you prefer to disable the Oryx build process during deployment, follow these steps:
       # 1. Remove the SCM_DO_BUILD_DURING_DEPLOYMENT app setting from your Azure App Service Environment variables.
@@ -63,4 +65,5 @@ jobs:
         with:
           app-name: 'neuracraft-backend'
           slot-name: 'Production'
+
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_7777640F0676443CBC66A94691FF1796 }}
