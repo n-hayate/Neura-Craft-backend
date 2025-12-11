@@ -39,8 +39,8 @@ jobs:
           name: python-app
           path: |
             .
-              !antenv/
-              !__pycache__/
+            !antenv/
+            !__pycache__/
  
               
       # 🚫 Opting Out of Oryx Build
@@ -67,3 +67,4 @@ jobs:
           slot-name: 'Production'
 
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_7777640F0676443CBC66A94691FF1796 }}
+
