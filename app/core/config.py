@@ -76,6 +76,15 @@ class Settings(BaseSettings):
     azure_search_api_key: str = ""
     azure_search_index_name: str = "neura-files-v2"
 
+    # LLM Settings (Azure OpenAI or Gemini)
+    llm_provider: str = Field(default="azure_openai")  # "azure_openai" or "gemini"
+    llm_api_key: str = ""
+    llm_endpoint: str = ""  # Azure OpenAI endpoint (e.g., https://your-resource.openai.azure.com/)
+    llm_model: str = Field(default="gpt-4")  # Model name (e.g., "gpt-4", "gpt-4-turbo", "gpt-35-turbo")
+    azure_openai_api_version: str = Field(default="2024-02-15-preview")
+    llm_max_tokens: int = Field(default=2000)
+    llm_temperature: float = Field(default=0.7)
+
 
 
 @lru_cache
