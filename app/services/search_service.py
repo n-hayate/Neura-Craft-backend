@@ -162,7 +162,7 @@ class SearchService:
         owner_id: int | None = None,
         status: str | None = None,
         sort_by: str = "updated_at_desc",
-        top: int = 5,
+        top: int = 3,
     ) -> List[Dict[str, Any]]:
         """
         RAG（Retrieval-Augmented Generation）用の検索メソッド（PoC用）
