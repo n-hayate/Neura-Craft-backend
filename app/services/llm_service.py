@@ -18,6 +18,7 @@ class LLMService:
         self.model = getattr(settings, "llm_model", "gpt-4")
         self.max_tokens = getattr(settings, "llm_max_tokens", 2000)
         self.temperature = getattr(settings, "llm_temperature", 0.7)
+        self.timeout = getattr(settings, "llm_timeout", 120)
 
         if not self.api_key:
             logger.warning("LLM API key not configured. LLM features will be disabled.")
@@ -28,10 +29,12 @@ class LLMService:
             if self.provider == "azure_openai":
                 try:
                     from openai import AsyncAzureOpenAI
+                    import httpx
                     self.client = AsyncAzureOpenAI(
                         api_key=self.api_key,
                         api_version=getattr(settings, "azure_openai_api_version", "2024-02-15-preview"),
                         azure_endpoint=self.endpoint,
+                        timeout=httpx.Timeout(self.timeout, connect=10.0),
                     )
                 except ImportError:
                     logger.error("openai package not installed. Install with: pip install openai")

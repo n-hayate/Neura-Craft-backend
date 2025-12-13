@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+import requests
 
 from azure.core.credentials import AzureKeyCredential
 from azure.search.documents import SearchClient
@@ -49,8 +50,21 @@ class SearchService:
         sort_by: str = "updated_at_desc",
         page: int = 1,
         page_size: int = 10,
-    ) -> Tuple[int, List[Dict[str, Any]]]:
-        if not self.client:
+    ) -> Tuple[int, List[Dict[str, Any]], Optional[int]]:
+        """
+        検索を実行し、結果とAzure Searchの処理時間を返す
+        
+        Returns:
+            Tuple[total_count, files, search_time_ms]
+            - total_count: 検索結果の総件数
+            - files: 検索結果のファイルリスト
+            - search_time_ms: Azure Searchの処理時間（ミリ秒）、取得できない場合はNone
+        """
+        endpoint = settings.azure_search_endpoint
+        api_key = settings.azure_search_api_key
+        index_name = settings.azure_search_index_name
+
+        if not endpoint or not api_key or not index_name:
             raise RuntimeError("Azure Search client is not configured.")
 
         filter_clauses = []
@@ -110,44 +124,86 @@ class SearchService:
         else:
             search_text = "*"
 
-        logger.info(f"Searching index: {self.client._index_name} query: '{search_text}' filter: '{filter_expression}'")
+        logger.info(f"Searching index: {index_name} query: '{search_text}' filter: '{filter_expression}'")
 
-        results = self.client.search(
-            search_text=search_text,
-            search_fields=self.SEARCH_FIELDS,
-            filter=filter_expression,
-            order_by=order_by,
-            skip=skip,
-            top=page_size,
-            include_total_count=True,
-        )
+        # REST APIでAzure Searchを呼び出す
+        search_url = f"{endpoint}/indexes/{index_name}/docs/search"
+        api_version = "2023-11-01"
+        
+        # リクエストボディを構築
+        request_body: Dict[str, Any] = {
+            "search": search_text,
+            "searchFields": self.SEARCH_FIELDS,
+            "top": page_size,
+            "skip": skip,
+            "includeTotalCount": True,
+        }
+        
+        if filter_expression:
+            request_body["filter"] = filter_expression
+        
+        if order_by:
+            request_body["orderby"] = order_by
 
-        files: List[Dict[str, Any]] = []
-        for doc in results:
-            original_name = doc.get("original_name")
-            file_name = doc.get("file_name")
-            display_name = original_name or file_name
+        # ヘッダーを設定
+        headers = {
+            "Content-Type": "application/json",
+            "api-key": api_key,
+        }
 
-            files.append(
-                {
-                    "id": doc.get("file_id") or doc.get("key"),
-                    "file_name": file_name,
-                    "original_name": original_name,
-                    "display_name": display_name,
-                    "application": doc.get("application"),
-                    "issue": doc.get("issue"),
-                    "ingredient": doc.get("ingredient"),
-                    "customer": doc.get("customer"),
-                    "trial_id": doc.get("trial_id"),
-                    "author": doc.get("author"),
-                    "status": doc.get("status"),
-                    "updated_at": self._serialize_datetime(doc.get("updated_at")),
-                    "blob_path": doc.get("blob_path"),
-                }
+        try:
+            response = requests.post(
+                f"{search_url}?api-version={api_version}",
+                json=request_body,
+                headers=headers,
+                timeout=30,
             )
+            response.raise_for_status()
+            
+            # レスポンスヘッダーからelapsed-timeを取得
+            elapsed_time_ms: Optional[int] = None
+            elapsed_time_str = response.headers.get("elapsed-time")
+            if elapsed_time_str:
+                try:
+                    # elapsed-timeはミリ秒単位の文字列
+                    elapsed_time_ms = int(float(elapsed_time_str))
+                except (ValueError, TypeError):
+                    logger.warning(f"Failed to parse elapsed-time header: {elapsed_time_str}")
+            
+            response_data = response.json()
+            
+            # 検索結果をパース
+            files: List[Dict[str, Any]] = []
+            total_count = response_data.get("@odata.count", 0)
+            
+            for doc in response_data.get("value", []):
+                original_name = doc.get("original_name")
+                file_name = doc.get("file_name")
+                display_name = original_name or file_name
 
-        total_count = results.get_count() or 0
-        return total_count, files
+                files.append(
+                    {
+                        "id": doc.get("file_id") or doc.get("key"),
+                        "file_name": file_name,
+                        "original_name": original_name,
+                        "display_name": display_name,
+                        "application": doc.get("application"),
+                        "issue": doc.get("issue"),
+                        "ingredient": doc.get("ingredient"),
+                        "customer": doc.get("customer"),
+                        "trial_id": doc.get("trial_id"),
+                        "author": doc.get("author"),
+                        "status": doc.get("status"),
+                        "updated_at": self._serialize_datetime(doc.get("updated_at")),
+                        "blob_path": doc.get("blob_path"),
+                    }
+                )
+            
+            return total_count, files, elapsed_time_ms
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Azure Search REST API error: {e}")
+            raise RuntimeError(f"Azure Search request failed: {str(e)}")
 
     def search_for_rag(
         self,

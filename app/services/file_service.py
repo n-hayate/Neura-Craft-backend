@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -72,13 +72,21 @@ class FileService:
         sort_by: str = "updated_at_desc",
         page: int = 1,
         page_size: int = 10,
-    ) -> Tuple[int, List[dict]]:
-        """Azure AI Search を利用した検索（SQL LIKE は廃止）"""
+    ) -> Tuple[int, List[dict], Optional[int]]:
+        """
+        Azure AI Search を利用した検索（SQL LIKE は廃止）
+        
+        Returns:
+            Tuple[total_count, files, search_time_ms]
+            - total_count: 検索結果の総件数
+            - files: 検索結果のファイルリスト
+            - search_time_ms: Azure Searchの処理時間（ミリ秒）、取得できない場合はNone
+        """
 
         if not self.search_service.is_enabled():
             raise RuntimeError("Azure Search is not configured.")
 
-        total_count, files = self.search_service.search(
+        total_count, files, search_time_ms = self.search_service.search(
             query=q,
             application=application,
             issue=issue,
@@ -121,7 +129,7 @@ class FileService:
                     f["download_count"] = count_map.get(fid, 0)
                     f["is_preview_hidden"] = preview_map.get(fid, False)
 
-        return total_count, files
+        return total_count, files, search_time_ms
 
     def update_metadata(self, file_id: str, payload: FileMetadataUpdate) -> File:
         """メタデータの部分更新"""

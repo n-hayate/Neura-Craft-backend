@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from uuid import uuid4
 
 from fastapi import (
@@ -9,6 +10,7 @@ from fastapi import (
     Form,
     HTTPException,
     Query,
+    Response,
     UploadFile,
     status,
 )
@@ -145,6 +147,7 @@ def list_files(
 
 @router.get("/search", response_model=FileSearchResponse)
 def search_files(
+    response: Response,
     q: str | None = Query(None, description="ファイル名での部分一致検索"),
     mine_only: bool = Query(False, description="自分のファイルのみ検索する場合はtrue"),
     application: str | None = Query(None),
@@ -161,10 +164,13 @@ def search_files(
     current_user: User = Depends(get_current_user),
 ):
     """ファイル検索 API（Step4でAzure Searchに置き換え予定）"""
+    # サーバー処理時間の計測開始
+    server_start_time = time.perf_counter()
+    
     service = FileService(db)
     owner_id = current_user.id if mine_only else None
 
-    total_count, files = service.search(
+    total_count, files, search_time_ms = service.search(
         owner_id=owner_id,
         q=q,
         application=application,
@@ -181,6 +187,16 @@ def search_files(
 
     blob_service = BlobService()
     results = [_to_file_with_link(f, blob_service) for f in files]
+    
+    # サーバー処理時間の計測終了
+    server_end_time = time.perf_counter()
+    server_time_ms = int((server_end_time - server_start_time) * 1000)
+    
+    # レスポンスヘッダーに処理時間を設定
+    response.headers["X-Server-Time-ms"] = str(server_time_ms)
+    if search_time_ms is not None:
+        response.headers["X-Search-Time-ms"] = str(search_time_ms)
+    
     return FileSearchResponse(total_count=total_count, files=results)
 
 

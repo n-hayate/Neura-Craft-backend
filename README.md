@@ -59,6 +59,7 @@ python scripts/seed_data.py
 | `AZURE_SEARCH_INDEX_NAME`         | インデックス名 (例: `neura-files-v2`)                  |
 | `AZURE_SEARCH_DATASOURCE_NAME`    | データソース名 (例: `neura-files-ds`)                  |
 | `AZURE_SEARCH_INDEXER_NAME`       | インデクサー名 (例: `neura-files-idx`)                 |
+| `LLM_TIMEOUT`                     | LLM API 呼び出しタイムアウト（秒）                     |
 
 ### ストレージ設定（ローカル / Azure）
 
@@ -79,6 +80,16 @@ python scripts/seed_data.py
 ## Azure AI Search の設定
 
 本プロジェクトでは、検索エンジンとして **Azure AI Search** を採用しています（SQL LIKE 検索は廃止済み）。
+また、検索パフォーマンス測定のために、検索 API では Azure Search のレスポンスヘッダー `elapsed-time` を取得しています（SDK ではヘッダー取得が難しいため、REST API を利用）。
+
+## 検索パフォーマンス測定（計測ヘッダー）
+
+`GET /api/v1/files/search` は、パフォーマンス測定用に以下のレスポンスヘッダーを返します。
+
+- **`X-Server-Time-ms`**: FastAPI がリクエストを受けてからレスポンスを返すまでのサーバー処理時間（ミリ秒）
+- **`X-Search-Time-ms`**: Azure AI Search の検索処理時間（ミリ秒、取得できない場合は返りません）
+
+詳細: `docs/performance_measurement.md`
 
 ### 有効化手順
 
@@ -252,6 +263,13 @@ const result = await response.json();
 - `created_at_asc`
 
 #### レスポンス
+
+#### レスポンスヘッダー（パフォーマンス測定）
+
+| ヘッダー名         | 型     | 説明                                                                 |
+| ------------------ | ------ | -------------------------------------------------------------------- |
+| `X-Server-Time-ms` | string | サーバー側処理時間（ミリ秒）                                         |
+| `X-Search-Time-ms` | string | Azure AI Search 処理時間（ミリ秒、取得できない場合は付与されません） |
 
 ```json
 {

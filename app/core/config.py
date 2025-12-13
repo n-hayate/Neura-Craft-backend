@@ -84,6 +84,7 @@ class Settings(BaseSettings):
     azure_openai_api_version: str = Field(default="2024-02-15-preview")
     llm_max_tokens: int = Field(default=2000)
     llm_temperature: float = Field(default=0.7)
+    llm_timeout: int = Field(default=120)  # LLM API呼び出しのタイムアウト（秒）
 
 
 
