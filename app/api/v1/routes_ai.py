@@ -72,7 +72,13 @@ async def analyze_with_ai(
                 used_content += 1
                 content = (doc.get("content") or "")[:3000]
 
-            docs_for_llm.append({"original_name": original_name, "content": content})
+            docs_for_llm.append(
+                {
+                    "file_id": str(file_id) if file_id else "",
+                    "original_name": original_name,
+                    "content": content,
+                }
+            )
 
         if used_ex and not used_content:
             mode = "extraction"
@@ -107,6 +113,11 @@ async def analyze_with_ai(
         return AIAnalysisResponse(
             answer=result["answer"],
             sources=[d.get("original_name", "") for d in docs_for_llm if d.get("original_name")],
+            source_files=[
+                {"file_id": d.get("file_id", ""), "original_name": d.get("original_name", "")}
+                for d in docs_for_llm
+                if d.get("file_id") and d.get("original_name")
+            ],
             error=result.get("error"),
         )
 
