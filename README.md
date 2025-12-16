@@ -156,6 +156,14 @@ OpenAPI JSON: `http://localhost:8000/openapi.json`
 
 ファイルをアップロードすると、指定されたメタデータとともに Azure Blob Storage に保存します。`multipart/form-data`形式で送信してください。
 
+#### Step3 テンプレ（.xlsx）の自動抽出について
+
+Step3 テンプレ（シート名: **メタデータ / LOG / 配合検討**）の `.xlsx` をアップロードした場合、サーバー側で **機械抽出（meta/log/formulation）** を行い、`file_extractions` テーブルに保存します（抽出に失敗してもアップロード自体は成功させます）。
+
+メタデータの優先順位は以下です（アップロード時に決定され、DB に保存されます）:
+
+- Form（`multipart/form-data`） > Excel の抽出 `meta` > ファイル名の `_` 区切り推定
+
 #### リクエストパラメータ（FormData）
 
 | フィールド名  | 型     | 必須 | 説明                                 | 備考                                   |
@@ -212,6 +220,15 @@ const response = await fetch("http://localhost:8000/api/v1/files", {
 
 const result = await response.json();
 ```
+
+---
+
+### `GET /api/v1/files/{file_id}/extraction`（抽出結果参照・デバッグ用）
+
+`POST /api/v1/files` で `.xlsx`（Step3 テンプレ）をアップロードした際の抽出結果（JSON）を返します。
+
+- 404: 抽出結果が存在しない（未抽出/抽出失敗/未アップロード等）
+- 権限: 現状は owner のみ参照可能
 
 ---
 
@@ -483,6 +500,14 @@ const result = await response.json();
 ```bash
 pytest
 ```
+
+## AI 分析 API
+
+### `POST /api/v1/ai/analyze`（検索結果の上位 N 件を AI で分析）
+
+現状は Azure AI Search の検索結果（上位 N 件）を対象に分析しますが、LLM に渡すコンテキストは **抽出済みデータ（`file_extractions`）を優先**して生成します。抽出が存在しない場合のみ、フォールバックとして検索結果の `content`（本文）を短く切って渡します。
+
+高速・安定した結果にしたい場合は、Step3 テンプレの `.xlsx` をアップロードして抽出が保存されている状態で利用してください。
 
 ## 今後の拡張メモ
 

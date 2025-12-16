@@ -28,6 +28,8 @@ from app.services.blob_service import BlobService
 from app.services.file_service import FileService
 from app.services.reference_service import ReferenceService
 from app.services.dashboard_service import DashboardService
+from app.services.excel_extractor_step3 import parse_step3_xlsx
+from app.services.extraction_service import upsert_extraction, get_extraction
 
 logger = logging.getLogger(__name__)
 
@@ -334,12 +336,35 @@ async def upload_file(
             detail=f"File too large. Maximum size allowed is {MAX_FILE_SIZE / (1024 * 1024)}MB"
         )
 
-    # data = await uploaded_file.read()  # メモリ節約のため一括読み込みを廃止
     logger.info("Uploading file: %s (approx %d bytes)", uploaded_file.filename, content_length or 0)
 
     file_id = str(uuid4())
     original_name = uploaded_file.filename
     _, ext = os.path.splitext(original_name)
+
+    # Step3テンプレ（.xlsx）のみ先に抽出しておく（その後 seek(0) でストリーミングアップロード継続）
+    excel_extraction = None
+    excel_meta: dict = {}
+    if ext.lower() == ".xlsx":
+        raw = await uploaded_file.read()
+        uploaded_file.file.seek(0)
+        try:
+            excel_extraction = parse_step3_xlsx(raw)
+            excel_meta = excel_extraction.get("meta", {}) or {}
+        except Exception as e:
+            logger.warning("Excel extraction failed: %s", e)
+            excel_extraction = {"error": str(e)}
+            excel_meta = {}
+
+    # メタの優先順位：Form > Excel(meta) > filename
+    name_meta = _extract_metadata_from_filename(original_name)
+    application = application or excel_meta.get("application") or name_meta.get("application")
+    issue = issue or excel_meta.get("issue") or name_meta.get("issue")
+    ingredient = ingredient or excel_meta.get("ingredient") or name_meta.get("ingredient")
+    customer = customer or excel_meta.get("customer") or name_meta.get("customer")
+    trial_id = trial_id or excel_meta.get("trial_id") or name_meta.get("trial_id")
+    author = author or excel_meta.get("author") or name_meta.get("author")
+
     extension = ext.lstrip(".")
     blob_name = f"{file_id}.{extension}" if extension else file_id
 
@@ -399,7 +424,32 @@ async def upload_file(
                 detail="Failed to persist file metadata.",
             ) from exc
 
+        # DB登録完了後に抽出結果を保存（抽出失敗でもアップロードは通す）
+        if excel_extraction and not excel_extraction.get("error"):
+            try:
+                upsert_extraction(db, file_id, excel_extraction)
+            except Exception as e:
+                logger.warning("Failed to save extraction for %s: %s", file_id, e)
+
     return record
+
+
+@router.get("/{file_id}/extraction")
+def read_extraction(
+    file_id: str,
+    db=Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    file_service = FileService(db)
+    file_obj = file_service.get(file_id)
+
+    if file_obj.owner_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    data = get_extraction(db, file_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="extraction not found")
+    return data
 
 
 @router.put("/{file_id}")
